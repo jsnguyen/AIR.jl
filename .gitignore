@@ -1,0 +1,9 @@
+*.log
+*.toml
+__pycache__/
+*.fits
+*.vot
+nirc2_data
+nirc2_data_raw
+*.txt
+.DS_Store
