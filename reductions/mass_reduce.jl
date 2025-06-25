@@ -14,6 +14,7 @@ autolog("$(@__FILE__).log") do
         
         darks_filename = joinpath(obslog["data_folder"], "darks.fits")
         flats_filename = joinpath(obslog["data_folder"], "flats.fits")
+        masks_filename = joinpath(obslog["data_folder"], "master_mask.fits")
 
         if isfile(darks_filename)
             master_darks = load(darks_filename, :)
@@ -27,6 +28,17 @@ autolog("$(@__FILE__).log") do
         else
             @warn "No master flats found..."
             master_flats = AstroImage[]
+        end
+
+        masks = Dict{Any, BitMatrix}()
+        if isfile(masks_filename)
+            raw_masks = load(masks_filename, :)
+
+            for rm in raw_masks
+                key = size(rm)
+                masks[key] = BitMatrix(rm)
+            end
+
         end
 
         sci_frames = load_frames(obslog, "sci")
@@ -57,7 +69,8 @@ autolog("$(@__FILE__).log") do
             if size(bad_pixel_mask) != size(sf)
                 bad_pixel_mask = crop(NIRC2_bad_pixel_mask, size(sf))
             end
-            mask = bad_pixel_mask
+
+            mask = bad_pixel_mask .| masks[size(sf)] # also combine the extra mask if it exists
 
             # make the median frame to do pixel replacement
             # not super efficient, but it works

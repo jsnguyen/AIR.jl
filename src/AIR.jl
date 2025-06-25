@@ -14,7 +14,7 @@ using Plots
 using Statistics
 using ImageFiltering
 
-export pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark
+export pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, pad_to_size
 
 const NIRC2_bad_pixel_mask = Bool.(load("masks/bad_pixel_mask_20230101.fits").data)
 
@@ -159,6 +159,7 @@ function make_masters(frames, keylist; n_sigma::Float64=6.0, median_size::Int64=
     end
 
     master_frames = Dict{Any, AstroImage}()
+    master_frames_masks = Dict{Any, BitMatrix}()
     for key in keys(frame_dict)
 
         # applies method (mean, median) to frame list
@@ -200,9 +201,10 @@ function make_masters(frames, keylist; n_sigma::Float64=6.0, median_size::Int64=
         mf["MASTD"] = std(mf.data[.!mask])
 
         master_frames[key] = mf
+        master_frames_masks[key] = mask
     end
 
-    return master_frames
+    return master_frames, master_frames_masks
 
 end
 
@@ -308,5 +310,34 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
     return matched_dark
 
 end
+
+function pad_to_size(a, target_size; padval=0)
+    current_size = size(a)
+    pad_total = target_size .- current_size
+
+    # A robustness check to avoid errors if padding is negative
+    if any(x -> x < 0, pad_total)
+        # Or handle this case by cropping, etc.
+        error("Input array size is larger than target_size.")
+    end
+
+    # Calculate padding for each side
+    pad_top    = floor(Int, pad_total[1] / 2)
+    pad_bottom = pad_total[1] - pad_top
+    pad_left   = floor(Int, pad_total[2] / 2)
+    pad_right  = pad_total[2] - pad_left
+
+    println("PADDING ", pad_top, " ", pad_bottom, " ", pad_left, " ", pad_right)
+
+    # Create the Fill object for padding
+    # Note: The syntax in your original post was slightly off for modern versions.
+    # padarray expects a border type, like Fill.
+    border = Fill(padval, (pad_top, pad_left), (pad_bottom, pad_right))
+    padded_a = padarray(a, border)
+    
+    # This is the correct way to ensure the returned array is 1-indexed.
+    return parent(padded_a)
+end
+
 
 end
