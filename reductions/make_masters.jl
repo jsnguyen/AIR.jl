@@ -142,9 +142,35 @@ function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "
     return master_flats, master_flats_masks
 end
 
+function make_master_masks(master_darks_masks, master_flats_masks)
+    # sort masks by size
+    mask_stack = Dict{Any, Vector{BitMatrix}}()
+    for mask in vcat(master_darks_masks, master_flats_masks)
+        key = size(mask)
+
+        if !haskey(mask_stack, key)
+            mask_stack[key] = BitMatrix[]
+        end
+
+        push!(mask_stack[key], mask)
+
+    end
+
+    # combine masks by size
+    master_masks = Dict{Any, Array{UInt8}}()
+    for key in keys(mask_stack)
+        mm = reduce(.|, mask_stack[key])
+        mm = Array{UInt8}(mm) # convert BitMatrix to Array{UInt8} since FITS files don't support BitMatrix
+        master_masks[key] = mm
+    end
+
+    return master_masks
+end
+
 autolog("$(@__FILE__).log") do
 
-    for obslog_filename in Glob.glob("reductions/obslogs/*.toml")
+    obslog_folder = "reductions/obslogs"
+    for obslog_filename in Glob.glob("*_AS_209.toml", obslog_folder)
         @info "Loading obslog from" obslog_filename
         obslog = load_obslog(obslog_filename)
         
@@ -166,28 +192,9 @@ autolog("$(@__FILE__).log") do
 
         @info "Writing masters masks to" master_mask_filename
 
-        master_masks =  vcat(master_darks_masks, master_flats_masks)
+        master_masks = make_master_masks(master_darks_masks, master_flats_masks)
 
-        mask_stack = Dict{Any, Vector{BitMatrix}}()
-        for mask in master_masks
-            key = size(mask)
-
-            if !haskey(mask_stack, key)
-                mask_stack[key] = BitMatrix[]
-            end
-
-            push!(mask_stack[key], mask)
-
-        end
-
-        combined_master_masks = Dict{Any, Array{UInt8}}()
-        for key in keys(mask_stack)
-            master_mask = reduce(.|, mask_stack[key])
-            master_mask = Array{UInt8}(master_mask)
-            combined_master_masks[key] = master_mask
-        end
-
-        save(master_mask_filename, collect(values(combined_master_masks))...)
+        save(master_mask_filename, collect(values(master_masks))...)
     end
 
 end

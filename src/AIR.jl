@@ -6,6 +6,7 @@ using LoggingExtras
 using TOML
 using OrderedCollections
 using Printf
+using Dates
 
 using AstroImages
 using SkyCoords
@@ -14,7 +15,7 @@ using Plots
 using Statistics
 using ImageFiltering
 
-export pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, pad_to_size
+export pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, get_NIRC2_gain, make_and_clear
 
 const NIRC2_bad_pixel_mask = Bool.(load("masks/bad_pixel_mask_20230101.fits").data)
 
@@ -68,10 +69,10 @@ function load_obslog(obslog_filename::String)
     end
 
     for key in keys(obslog)
-        if key == "data_folder"
+        if key in ["data_folder", "subfolder", "date"]
             continue
         else
-            obslog[key] = [joinpath(obslog["data_folder"], "raw", fn) for fn in obslog[key]]
+            obslog[key] = [joinpath(obslog["data_folder"], obslog["subfolder"], fn) for fn in obslog[key]]
         end
     end
 
@@ -311,32 +312,27 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
 
 end
 
-function pad_to_size(a, target_size; padval=0)
-    current_size = size(a)
-    pad_total = target_size .- current_size
+function get_NIRC2_gain(date_obs)
+    d = Date(date_obs, dateformat"y-m-d")
+    gain_date = Date(2023, 11, 20)
 
-    # A robustness check to avoid errors if padding is negative
-    if any(x -> x < 0, pad_total)
-        # Or handle this case by cropping, etc.
-        error("Input array size is larger than target_size.")
+    if d < gain_date
+        return 4.0  # pre-2023 gain
+    else
+        return 8.0  # post-2023 gain
     end
 
-    # Calculate padding for each side
-    pad_top    = floor(Int, pad_total[1] / 2)
-    pad_bottom = pad_total[1] - pad_top
-    pad_left   = floor(Int, pad_total[2] / 2)
-    pad_right  = pad_total[2] - pad_left
+end
 
-    println("PADDING ", pad_top, " ", pad_bottom, " ", pad_left, " ", pad_right)
-
-    # Create the Fill object for padding
-    # Note: The syntax in your original post was slightly off for modern versions.
-    # padarray expects a border type, like Fill.
-    border = Fill(padval, (pad_top, pad_left), (pad_bottom, pad_right))
-    padded_a = padarray(a, border)
-    
-    # This is the correct way to ensure the returned array is 1-indexed.
-    return parent(padded_a)
+function make_and_clear(folder_path, glob_pattern)
+    if !isdir(folder_path)
+        mkpath(folder_path)
+    else
+        for fn in Glob.glob(glob_pattern, folder_path)
+            @info "Removing" fn
+            rm(fn)
+        end
+    end
 end
 
 

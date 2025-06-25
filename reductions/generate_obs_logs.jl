@@ -10,7 +10,7 @@ using Statistics
 using AIR
 
 
-function generate_obs_logs(date, data_folder, output_folder, lampoff_threshold=100.0)
+function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_threshold=100.0)
 
     if !isdir(output_folder)
         mkpath(output_folder)
@@ -18,7 +18,7 @@ function generate_obs_logs(date, data_folder, output_folder, lampoff_threshold=1
 
     obslog_filepath = joinpath((output_folder, "$(date)_AS_209.toml"))
 
-    filenames = glob("*.fits", joinpath(data_folder, "raw"))
+    filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
     icrs_ra = hms"16 49 15.3034917000"deg
     icrs_dec = dms"-14 22 08.643317664"deg
@@ -118,12 +118,14 @@ function generate_obs_logs(date, data_folder, output_folder, lampoff_threshold=1
     end
 
     obslog = OrderedDict{String, Any}("data_folder" => data_folder,
-                                    "sci" => sci,
-                                    "flats" => flats,
-                                    "flats_sky" => flats_sky,
-                                    "flats_lampon" => flats_lampon,
-                                    "flats_lampoff" => flats_lampoff,
-                                    "darks" => darks)
+                                      "subfolder" => subfolder,
+                                      "date" => date,
+                                      "sci" => sci,
+                                      "flats" => flats,
+                                      "flats_sky" => flats_sky,
+                                      "flats_lampon" => flats_lampon,
+                                      "flats_lampoff" => flats_lampoff,
+                                      "darks" => darks)
 
     println("Found $(length(sci)) science frames")
     println("Found $(length(flats)) flats")
@@ -150,11 +152,12 @@ autolog("$(@__FILE__).log") do
 
     observations_folder = "/Users/jsn/landing/projects/AIR.jl/notebooks/nirc2_data/"
 
+    subfolder = "raw"
     for date in readdir(observations_folder)
         output_folder = "/Users/jsn/landing/projects/AIR.jl/reductions/obslogs"
         data_folder = "/Users/jsn/landing/projects/AIR.jl/notebooks/nirc2_data/$(date)"
         if isdir(data_folder)
-            distances = generate_obs_logs(date, data_folder, output_folder)
+            distances = generate_obs_logs(date, data_folder, subfolder, output_folder)
         end
     end
 end
