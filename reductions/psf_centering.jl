@@ -90,12 +90,16 @@ autolog("$(@__FILE__).log") do
 
     template = cropped_frames[1].data
     #template_offset = calculate_centroid_offset(template)
-    template_fit_params = gaussian2d_fit(template, [1.0e9, size(template, 2)/2, size(template, 1)/2, 1.0, 1.0, 0.0])
+
+    # want a really tight gaussian for finding the center
+    template_gauss_fit_width = 3.0
+    template_fit_params = gaussian2d_fixedwidth_fit(template, [1.0e9, size(template, 2)/2, size(template, 1)/2, 1.0e8], template_gauss_fit_width)
     template_offset = (template_fit_params[3] - size(template, 1)/2, template_fit_params[2] - size(template, 2)/2)
 
-    @info template_offset
+    @info "template params" template_offset=template_offset
     template = warp(template, Translation(template_offset...), axes(template)) |> x -> crop(x, (fine_size, fine_size))
-    @info calculate_centroid_offset(template) 
+    template_offset = calculate_centroid_offset(template)
+    @info "template params" template_offset=template_offset
 
     n_iter = 3
     for i in 1:n_iter
@@ -134,7 +138,7 @@ autolog("$(@__FILE__).log") do
             sequences_folder = joinpath(sequence_obslog["data_folder"], "sequences")
             save(joinpath(sequences_folder, "template.fits"), template)
             save(joinpath(sequences_folder, "reg.fits"), framelist_to_cube(cropped_frames))
-            save(joinpath(sequences_folder, "unsat.fits"), framelist_to_cube(aligned_frames))
+            save(joinpath(sequences_folder, "aligned.fits"), framelist_to_cube(aligned_frames))
             save(joinpath(sequences_folder, "ccr.fits"), framelist_to_cube(ccrs))
 
         end
