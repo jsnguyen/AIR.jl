@@ -92,6 +92,9 @@ autolog("$(@__FILE__).log") do
 
             push!(reduced_frames, reduced)
 
+            reduced_filename = "reduced_$(lpad(reduced["FRAMENO"], 4, '0')).fits"
+            reduced["RED-FN"] = reduced_filename
+
         end
 
         @info "Reduced $(length(reduced_frames)) science frames"
@@ -99,30 +102,31 @@ autolog("$(@__FILE__).log") do
         reduced_folder = joinpath(obslog["data_folder"], "reduced")
         make_and_clear(reduced_folder, "reduced_*.fits")
 
-        reduced_filenames = String[]
+        reduced_filepaths = String[]
         for rf in reduced_frames
-            frameno = rf["FRAMENO"]
-            reduced_filename = joinpath(reduced_folder, "reduced_$(lpad(frameno, 4, '0')).fits")
-            push!(reduced_filenames, basename(reduced_filename))
-            println("Saving reduced frame to $(reduced_filename)")
+            reduced_filepath = joinpath(reduced_folder, rf["RED-FN"])
+            push!(reduced_filepaths, rf["RED-FN"])
+            println("Saving reduced frame to $(reduced_filepath)")
 
-            save(reduced_filename, rf)
+            save(reduced_filepath, rf)
         end
 
         reduced_obslog = OrderedDict{String, Any}("data_folder" => obslog["data_folder"],
                                                   "subfolder" => "reduced",
                                                   "date" => obslog["date"],
-                                                  "reduced" => reduced_filenames,
+                                                  "reduced" => reduced_filepaths,
                                                   "rejects" => String[])
 
-        obslog_filepath = joinpath((obslog_folder, "$(obslog["date"])_AS_209_reduced.toml"))
-
-        toml_str = pretty_print_toml(reduced_obslog)
-
-        open(obslog_filepath, "w") do io
-            write(io, toml_str)
+        reduced_obslog_filepath = joinpath((obslog_folder, "$(obslog["date"])_reduced.toml"))
+        if isfile(reduced_obslog_filepath)
+            @warn "Existing obslog file found! Skipping!"
+        else
+            @warn "Writing to $(reduced_obslog_filepath)"
+            toml_str = pretty_print_toml(reduced_obslog)
+            open(reduced_obslog_filepath, "w") do io
+                write(io, toml_str)
+            end
         end
-
 
     end
 

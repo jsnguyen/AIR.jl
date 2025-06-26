@@ -16,7 +16,7 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_
         mkpath(output_folder)
     end
 
-    obslog_filepath = joinpath((output_folder, "$(date)_AS_209.toml"))
+    obslog_filepath = joinpath(output_folder, "$(date)_AS_209.toml")
 
     filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
@@ -150,12 +150,12 @@ end
 
 autolog("$(@__FILE__).log") do
 
-    observations_folder = "/Users/jsn/landing/projects/AIR.jl/notebooks/nirc2_data/"
+    observations_folder = "/Users/jsn/landing/projects/AIR.jl/data/"
 
     subfolder = "raw"
     for date in readdir(observations_folder)
         output_folder = "/Users/jsn/landing/projects/AIR.jl/reductions/obslogs"
-        data_folder = "/Users/jsn/landing/projects/AIR.jl/notebooks/nirc2_data/$(date)"
+        data_folder = joinpath(observations_folder, date)
         if isdir(data_folder)
             distances = generate_obs_logs(date, data_folder, subfolder, output_folder)
         end
