@@ -118,6 +118,10 @@ function crop(img::AbstractArray, crop_size::Tuple{Int,Int}; center=nothing)
     h, w = size(img)
     crop_h, crop_w = crop_size
 
+    if h==crop_h && w==crop_w
+        return img  # No cropping needed, return the original image
+    end
+
     if center === nothing
         center_row = Int(round(h/2))
         center_col = Int(round(w/2))
