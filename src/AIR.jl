@@ -15,10 +15,24 @@ using AstroAngles
 using Plots
 using Statistics
 using ImageFiltering
+using LsqFit
+using CoordinateTransformations
+using AstroLib
+using LACosmic
 
-export pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, get_NIRC2_gain, make_and_clear
+const observatory_lat = +19.82525
+const observatory_lon = -155.468889
 
-const NIRC2_bad_pixel_mask = Bool.(load("masks/bad_pixel_mask_20230101.fits").data)
+export small_angle_distance, pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, get_NIRC2_gain, make_and_clear, gaussian2d_fit, gaussian2d_fixedwidth_fit, make_circle_mask, calculate_north_angle, par_angle, load_sequences
+
+small_angle_distance = ((ra_a, dec_a), (ra_b, dec_b)) -> sqrt(((ra_a-ra_b)*cos(deg2rad(dec_a)))^2 + (dec_a-dec_b)^2) # units of degrees
+
+const _mask_dir = joinpath(@__DIR__, "..", "masks")
+const NIRC2_bad_pixel_mask = begin
+    maskfile = joinpath(_mask_dir, "bad_pixel_mask_20230101.fits")
+    img = load(maskfile)            # from AstroImages or FITSIO
+    Bool.(img.data)                 # convert to Bool matrix
+end
 
 function deg2arcsec(deg::Float64)
     return deg * 3600.0
@@ -71,7 +85,7 @@ function load_obslog(obslog_filename::String)
     return obslog
 end
 
-function load_frames(obslog, key)
+function load_frames(obslog, key; rejects::Vector{String}=String[])
 
     frames = AstroImage[]
 
@@ -80,15 +94,10 @@ function load_frames(obslog, key)
     end
 
     for fn in obslog[key]
-        if haskey(obslog, "rejects")
-            if fn in obslog["rejects"]
-                continue
-            else
-                push!(frames, load(joinpath(obslog["data_folder"], obslog["subfolder"], fn)))
-            end
-        else
-            push!(frames, load(joinpath(obslog["data_folder"], obslog["subfolder"], fn)))
+        if fn in rejects
+            continue
         end
+            push!(frames, Float64.(load(joinpath(obslog["data_folder"], obslog["subfolder"], fn))))
     end
 
     return frames
@@ -339,5 +348,221 @@ function make_and_clear(folder_path, glob_pattern)
     end
 end
 
+function gaussian2d_fit(data::Matrix{Float64}, initial_guess::Vector{Float64})
+    # Define the 2D Gaussian model
+    model(coords, p) = p[1] .* exp.(-((coords[:,1] .- p[2] .- 0.5).^2 ./ (2 * p[4]^2) + (coords[:, 2] .- p[3] .- 0.5).^2 ./ (2 * p[5]^2))) .+ p[6]
+
+    # Create the coordinate grid
+    rows, cols = size(data)
+
+    x = repeat(1.0:cols, inner=rows) # x-coordinates repeated for each row
+    y = repeat(1.0:rows, outer=cols) # y-coordinates repeated for each column
+    coords = hcat(x, y)  # shape is (2, rows*cols)
+
+    # Perform the fit
+    fit = curve_fit(model, coords, vec(data), initial_guess)
+
+    return fit.param
+end
+
+function gaussian2d_fixedwidth_fit(data::Matrix{Float64}, initial_guess::Vector{Float64}, width::Float64)
+    # Define the 2D Gaussian model
+    # 1-based indexing here means we have to subtract 0.5 from the x and y coordinates to center the gaussian on the pixel grid
+    model(coords, p) = p[1] .* exp.(-((coords[:,1] .- p[2] .- 0.5).^2 ./ (2 * width^2) + (coords[:, 2] .- p[3] .- 0.5).^2 ./ (2 * width^2))) .+ p[4]
+
+    # Create the coordinate grid
+    rows, cols = size(data)
+
+    x = repeat(1.0:cols, inner=rows) # x-coordinates repeated for each row
+    y = repeat(1.0:rows, outer=cols) # y-coordinates repeated for each column
+    coords = hcat(x, y)  # shape is (2, rows*cols)
+
+    # Perform the fit
+    fit = curve_fit(model, coords, vec(data), initial_guess)
+
+    return fit.param
+end
+
+function make_circle_mask(img_size::Tuple{Int, Int}, radius::Int; center::Union{Tuple{Int, Int}, Nothing}=nothing)
+    # image size
+    h, w = img_size
+
+    # If center is not provided, calculate it
+    if center === nothing
+        center_y = h ÷ 2 + 1
+        center_x = w ÷ 2 + 1
+    else
+        center_y, center_x = center
+    end
+
+    # Create the mask
+    mask = BitMatrix(undef, h, w)
+    for i in 1:h
+        for j in 1:w
+            # Distance from the center
+            dist = sqrt((i - center_y)^2 + (j - center_x)^2)
+            mask[i, j] = dist <= radius
+        end
+    end
+
+    return mask
+end
+
+
+"""
+Calculate and return the starting angle, angular smear, and mean angle to north
+of an image from NIRC2 narrow cam, given its headers.
+
+The calculation is adapted from pyKLIP.
+"""
+
+float_or_parse_hexages(num::Number) = num
+float_or_parse_hexages(str::AbstractString) = AstroLib.ten(str)
+
+function calculate_north_angle(headers)
+    zp_offset = -0.262 # From Service et al 2016
+    rotator_mode = headers["ROTMODE"]
+    rotator_position = headers["ROTPOSN"] # Degrees
+    instrument_angle = headers["INSTANGL"] # Degrees
+
+    rotator_mode = "vertical angle"
+
+    pa_deg = 0.0
+    if rotator_mode == "vertical angle"
+        if haskey(headers, "PARANTEL")
+            parang = headers["PARANTEL"]
+        else
+            parang = headers["PARANG"]
+        end
+        pa_deg = parang + rotator_position - instrument_angle + zp_offset
+    elseif rotator_mode == "position angle"
+        pa_deg = rotator_position - instrument_angle + zp_offset
+    elseif rotator_mode == "stationary"
+        # TODO: Handle case where the instrument rotator is stationary.
+        return NaN, [NaN]
+    else
+        throw(ArgumentError("Unknown rotator mode " * rotator_mode))
+    end
+
+    # Keck rotator bug.
+            # parang = headers["PARANG"] # Degrees
+    # This does not appear to actually work
+    diff = 0.0
+    # if haskey(headers, "ROTNORTH")
+    #     pa_deg_idl = -headers["ROTNORTH"]
+    #     # diff += (pa_deg_idl - pa_deg)
+    #     # println(diff)
+    #     @info "Using ROTNORTH header from IDL pipeline" maxlog=1
+    # end
+
+    # Now calculate smear
+
+    # Get info for PA smearing calculation.
+    # epochobj = headers["DATE-OBS"]
+    # name = headers["TARGNAME"]
+    expref = headers["ITIME"]
+    coaddref = headers["COADDS"]
+    sampref = headers["SAMPMODE"]
+    msrref = headers["MULTISAM"]
+    xdimref = headers["NAXIS1"]
+    # ydimref = headers["NAXIS2"]
+    dec = float_or_parse_hexages(headers["DEC"]) + headers["DECOFF"]
+
+    if haskey(headers, "TOTEXP")
+        totexp = headers["TOTEXP"]
+    else
+        # Calculate total time of exposure (integration + readout).
+        if sampref == 2
+            totexp = (expref + 0.18 * (xdimref / 1024.0)^2) * coaddref
+        end
+        if sampref == 3
+            totexp =
+                (expref + (msrref - 1) * 0.18 * (xdimref / 1024.0)^2) * coaddref
+        end
+    end
+    # tinteg = totexp # [seconds]
+    totexp = totexp / 3600.0 # [hours]
+
+    # Get hour angle at start of exposure.
+    tmpahinit = float_or_parse_hexages(headers["HA"]) # [deg]
+    ahobs = 24.0 * tmpahinit / 360.0 # [hours]
+
+    if totexp * 3600 > 1 # If greater than 1 second...
+        # Estimate vertical position angle at each second of the exposure.
+        vp = Float64[]
+        vpref = 0.0
+        for j in 0:(3600*totexp-1)
+            ahtmp = ahobs + (j + 1.0 + 0.001) / 3600.0 # hours
+            # TODO: par_angle and observatory_latitude
+            push!(vp, par_angle(ahtmp, dec, observatory_lat))
+            if j == 0
+                vpref = vp[1]
+            end
+        end
+
+        # Handle case where PA crosses 0 <--> 360.
+        vp[vp.<0] .+= 360
+        vp[vp.>360.0] .+= 360
+
+        if vpref < 0
+            vpref += 360
+        end
+        if vpref > 360
+            vpref -= 360
+        end
+
+        # TODO: This is some crazy code... Should use use meandegrees()
+        # that uses atan() to avoid this.
+        # Check that images near PA=0 are handled correctly.
+        if any(vp .> 350) && any(vp .< 10)
+            vp[vp.>350] .-= 360
+        end
+        vpmean = mean(angle for angle = vp if isfinite(angle))
+
+        if vpmean < 60 && vpref > 350
+            vpmean += 360
+            vp .+= 360
+        end
+        pa_deg_mean = pa_deg + (vpmean - vpref)
+
+        # angle_start = pa_deg
+        # angle_smear = vpmean - vpref
+        angle_mean = pa_deg_mean
+        return angle_mean+diff, vp.+diff
+    else # Total exposure less than one second - treat as no smear
+        return pa_deg+diff, [pa_deg+diff]
+    end
+end
+
+"""
+Compute the parallactic angle, given hour angle (HA [hours]),
+declination (dec [deg]), and latitude (lat [deg]).  Returns
+parallactic angle in [deg].
+Source: pyKLIP
+"""
+function par_angle(HA, dec, lat)
+
+    HA_rad = deg2rad(HA * 15.0) # [hours] -> [rad]
+    dec_rad = deg2rad(dec)   # [deg] -> [rad]
+    lat_rad = deg2rad(lat)   # [deg] -> [rad]
+
+    parallang =
+        -atan(
+            -sin(HA_rad),  # [rad]
+            cos(dec_rad) * tan(lat_rad) - sin(dec_rad) * cos(HA_rad),
+        )
+
+    return rad2deg(parallang) # [deg]
+end
+
+function load_sequences(sequence_obslog)
+    sequences = Dict{String, Any}()
+    for key in keys(sequence_obslog)
+        if !(key in ["data_folder", "subfolder", "date"])
+            sequences[key] = load_frames(sequence_obslog, key)
+        end
+    end
+    return sequences
+end
 
 end

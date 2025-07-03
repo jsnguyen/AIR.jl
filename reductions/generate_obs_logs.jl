@@ -6,17 +6,11 @@ using SkyCoords
 using AstroAngles
 using Plots
 using Statistics
+using AstroImages
 
 using AIR
 
-
-function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_threshold=100.0)
-
-    if !isdir(output_folder)
-        mkpath(output_folder)
-    end
-
-    obslog_filepath = joinpath(output_folder, "$(date)_AS_209.toml")
+function contains_target(data_folder, subfolder; n_cutoff=3, arcsec_threshold=100)
 
     filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
@@ -26,49 +20,31 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_
     fk4_ra = hms"16 46 25.3250542612"deg
     fk4_dec = dms"-14 16 57.045137674"deg
 
-    arcsec_threshold = 100 # arcsec
     @info "=== AS 209 coordinates ==="
     @info "ICRS RA DEC" icrs_ra icrs_dec
     @info "FK4 RA DEC" fk4_ra fk4_dec
 
-    flat_az = 170.0 # this doesnt seem needed? az not necessarily at 170 deg in early Keck data
-    flat_el = 45.0
-
-    small_angle_distance = ((ra_a, dec_a), (ra_b, dec_b)) -> sqrt(((ra_a-ra_b)*cos(deg2rad(dec_a)))^2 + (dec_a-dec_b)^2) # units of degrees
-
-    sci = []
-    flats = []
-    flats_sky = []
-    flats_lampon = []
-    flats_lampoff = []
-    darks = []
-
-    frames = []
-    headers = []
-
+    target = String[]
     distances = []
-    for fn in filenames
-        hdu = FITS(fn, "r")
-        d = read(hdu[1])
-        h = read_header(hdu[1])
-        push!(frames, d)
-        push!(headers, h)
 
-        conditions = [h["CAMNAME"] == "narrow",
-                      h["GRSNAME"] == "clear",
-                      !(haskey(h, "SLITNAME") && (occursin("vortex", h["SLITNAME"]) || occursin("corona", h["SLITNAME"])))]
+    for fn in filenames
+        frame = load(fn)
+
+        conditions = [frame["CAMNAME"] == "narrow",
+                      frame["GRSNAME"] == "clear",
+                      !(haskey(frame, "SLITNAME") && (occursin("vortex", frame["SLITNAME"]) || occursin("corona", frame["SLITNAME"])))]
 
         if !all(conditions)
             @warn "Skipping file $(fn) due to conditions: $(conditions)"
             continue
         end
 
-        if !(h["RA"] isa Number) || !(h["DEC"] isa Number)
+        if !(frame["RA"] isa Number) || !(frame["DEC"] isa Number)
             @warn "Skipping file $(fn) due to missing RA/DEC"
             continue
         end
 
-        if h["RADECSYS"] == "FK4"
+        if frame["RADECSYS"] == "FK4"
             @info "Using FK4 coordinates for $(fn)"
             ra = fk4_ra
             dec = fk4_dec
@@ -77,35 +53,73 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_
             dec = icrs_dec
         end
 
-        radec_distance = deg2arcsec(small_angle_distance((ra, dec), (h["RA"], h["DEC"])))
-        altaz_distance = deg2arcsec(small_angle_distance((0, flat_el), (0, h["EL"])))
+        radec_distance = deg2arcsec(small_angle_distance((ra, dec), (frame["RA"], frame["DEC"])))
         push!(distances, radec_distance)
 
-        if radec_distance < arcsec_threshold && lowercase(h["SHRNAME"]) == "open"
+        if radec_distance < arcsec_threshold && lowercase(frame["SHRNAME"]) == "open"
 
-            @info "RADEC FRAME" filename=fn object=h["OBJECT"] targname=h["TARGNAME"] radec_distance=radec_distance
-            push!(sci, basename(fn))
+            @info "RADEC FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"] radec_distance=radec_distance
+            push!(target, basename(fn))
+        end
+    end
 
-        elseif altaz_distance <  arcsec_threshold && lowercase(h["WCDMSTAT"]) == "open" && lowercase(h["WCDTSTAT"]) == "open"
+    if length(target) <= n_cutoff
+        println("Not enough science frames found, skipping obslog generation for $(data_folder)")
+        return false
+    end
 
-            if median(d) < lampoff_threshold
-                @info "LAMPOFF FRAME" filename=fn object=h["OBJECT"] targname=h["TARGNAME"] altaz_distance=altaz_distance
+    return true
+
+end
+
+function generate_obs_logs(date, data_folder, subfolder, output_folder; lampoff_threshold=100.0, arcsec_threshold=100.0)
+
+    if !isdir(output_folder)
+        mkpath(output_folder)
+    end
+
+    obslog_filepath = joinpath(output_folder, "$(date)_obslog.toml")
+    filenames = glob("*.fits", joinpath(data_folder, subfolder))
+
+    flat_el = 45.0 # degrees, elevation of the flat field frames
+
+    sci = []
+    flats = []
+    flats_sky = []
+    flats_lampon = []
+    flats_lampoff = []
+    darks = []
+
+    distances = []
+    for fn in filenames
+        frame = load(fn)
+
+        altaz_distance = deg2arcsec(small_angle_distance((0, flat_el), (0, frame["EL"])))
+
+        if altaz_distance <  arcsec_threshold && lowercase(frame["WCDMSTAT"]) == "open" && lowercase(frame["WCDTSTAT"]) == "open"
+
+            if median(frame) < lampoff_threshold
+                @info "LAMPOFF FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"] altaz_distance=altaz_distance
                 push!(flats_lampoff, basename(fn))
             else
-                @info "LAMPON FRAME" filename=fn object=h["OBJECT"] targname=h["TARGNAME"] altaz_distance=altaz_distance
+                @info "LAMPON FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"] altaz_distance=altaz_distance
                 push!(flats_lampon, basename(fn))
             end
 
-        elseif occursin("sky", lowercase(h["OBJECT"]))
+        elseif occursin("sky", lowercase(frame["OBJECT"])) | occursin("twi", lowercase(frame["OBJECT"]))
 
-            @info "SKY FLAT FRAME" filename=fn object=h["OBJECT"] targname=h["TARGNAME"]
+            @info "SKY FLAT FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"]
             push!(flats_sky, basename(fn))
 
+        elseif frame["SHRNAME"] == "closed"
 
-        elseif h["SHRNAME"] == "closed"
-
-            @info "DARK FRAME" filename=fn object=h["OBJECT"] targname=h["TARGNAME"]
+            @info "DARK FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"]
             push!(darks, basename(fn))
+
+        else
+
+            @info "SCI FRAME" filename=fn object=frame["OBJECT"] targname=frame["TARGNAME"]
+            push!(sci, basename(fn))
 
         end
 
@@ -133,11 +147,6 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder, lampoff_
     println("Found $(length(flats_lampoff)) lamp-off flats")
     println("Found $(length(darks)) dark frames")
 
-    if length(sci) <= 3
-        println("Not enough science frames found, skipping obslog generation for $(date)")
-        return
-    end
-
     toml_str = pretty_print_toml(obslog)
 
     open(obslog_filepath, "w") do io
@@ -156,8 +165,10 @@ autolog("$(@__FILE__).log") do
     for date in readdir(observations_folder)
         output_folder = "/Users/jsn/landing/projects/AIR.jl/reductions/obslogs"
         data_folder = joinpath(observations_folder, date)
-        if isdir(data_folder)
-            distances = generate_obs_logs(date, data_folder, subfolder, output_folder)
+        if contains_target(data_folder, subfolder)
+            if isdir(data_folder)
+                distances = generate_obs_logs(date, data_folder, subfolder, output_folder)
+            end
         end
     end
 end

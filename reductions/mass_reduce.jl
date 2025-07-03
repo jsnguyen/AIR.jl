@@ -34,7 +34,7 @@ end
 autolog("$(@__FILE__).log") do
 
     obslog_folder = "reductions/obslogs"
-    for obslog_filename in Glob.glob("*_AS_209.toml", obslog_folder)
+    for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
         @info "Loading obslog from" obslog_filename
         obslog = load_obslog(obslog_filename)
         
@@ -47,6 +47,9 @@ autolog("$(@__FILE__).log") do
         masks = load_masks(masks_filename)
 
         sci_frames = load_frames(obslog, "sci")
+
+        # add cosmic ray image cleaning here at some point?
+        # first try didn't work properly...
 
         reduced_frames = AstroImage[]
         for sf in sci_frames
@@ -70,12 +73,19 @@ autolog("$(@__FILE__).log") do
                 sf["FLATDIV"] = true
             end
 
-            bad_pixel_mask = copy(NIRC2_bad_pixel_mask)
-            if size(bad_pixel_mask) != size(sf)
-                bad_pixel_mask = crop(NIRC2_bad_pixel_mask, size(sf))
+            # start with the bad pixel mask as our mask
+            mask = copy(NIRC2_bad_pixel_mask)
+
+            if size(mask) != size(sf)
+                mask = crop(NIRC2_bad_pixel_mask, size(sf))
             end
 
-            mask = bad_pixel_mask .| masks[size(sf)] # also combine the extra mask if it exists
+            if haskey(masks, size(sf))
+                mask = mask .| masks[size(sf)] # also combine the extra mask if it exists
+            end
+
+            nan_mask = isnan.(sf.data) .| isinf.(sf.data) # create a mask for NaN and Inf values
+            mask = mask .| nan_mask # combine the bad pixel mask with the NaN/Inf mask
 
             # make the median frame to do pixel replacement
             # not super efficient, but it works
@@ -114,16 +124,25 @@ autolog("$(@__FILE__).log") do
         reduced_obslog = OrderedDict{String, Any}("data_folder" => obslog["data_folder"],
                                                   "subfolder" => "reduced",
                                                   "date" => obslog["date"],
-                                                  "reduced" => reduced_filepaths,
-                                                  "rejects" => String[])
+                                                  "reduced" => reduced_filepaths)
 
         reduced_obslog_filepath = joinpath((obslog_folder, "$(obslog["date"])_reduced.toml"))
-        if isfile(reduced_obslog_filepath)
-            @warn "Existing obslog file found! Skipping!"
+
+        @info "Writing to $(reduced_obslog_filepath)"
+        toml_str = pretty_print_toml(reduced_obslog)
+        open(reduced_obslog_filepath, "w") do io
+            write(io, toml_str)
+        end
+
+        rejects_obslog_filepath = joinpath(obslog_folder, "$(obslog["date"])_rejects.toml")
+
+        if isfile(rejects_obslog_filepath)
+            @warn "Existing rejects file found! Skipping!"
         else
-            @warn "Writing to $(reduced_obslog_filepath)"
-            toml_str = pretty_print_toml(reduced_obslog)
-            open(reduced_obslog_filepath, "w") do io
+            rejects_obslog = OrderedDict{String, Any}("rejects" => String[])
+            @info "Writing to $(rejects_obslog_filepath)"
+            toml_str = pretty_print_toml(rejects_obslog)
+            open(rejects_obslog_filepath, "w") do io
                 write(io, toml_str)
             end
         end

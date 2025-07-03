@@ -170,7 +170,7 @@ end
 autolog("$(@__FILE__).log") do
 
     obslog_folder = "reductions/obslogs"
-    for obslog_filename in Glob.glob("*_AS_209.toml", obslog_folder)
+    for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
         @info "Loading obslog from" obslog_filename
         obslog = load_obslog(obslog_filename)
         
