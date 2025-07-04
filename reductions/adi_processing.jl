@@ -1,12 +1,5 @@
-using OrderedCollections
-using Glob
 using AstroImages
-using ImageTransformations
-using ImageFiltering
 using Statistics
-using ProgressMeter
-using CoordinateTransformations
-using LsqFit
 using Plots
 using ADI
 

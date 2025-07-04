@@ -1,17 +1,9 @@
-using OrderedCollections
-using Glob
 using AstroImages
 using ImageTransformations
-using ImageFiltering
 using Statistics
-using ProgressMeter
 using CoordinateTransformations
-using LinearAlgebra
-
 
 using AIR
-
-
 
 autolog("$(@__FILE__).log") do
 

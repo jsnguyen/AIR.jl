@@ -1,9 +1,4 @@
-using OrderedCollections
 using Glob
-using AstroImages
-using ImageFiltering
-using Statistics
-using ProgressMeter
 using Printf
 
 using AIR

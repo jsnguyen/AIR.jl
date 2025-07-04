@@ -1,16 +1,4 @@
-using OrderedCollections
-using Glob
 using AstroImages
-using ImageTransformations
-using ImageFiltering
-using Statistics
-using ProgressMeter
-using CoordinateTransformations
-import CoordinateTransformations: recenter
-using LsqFit
-using Optim
-using ForwardDiff
-using Rotations
 
 using AIR
 import AIR.crop 

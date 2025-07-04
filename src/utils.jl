@@ -1,12 +1,8 @@
-small_angle_distance = ((ra_a, dec_a), (ra_b, dec_b)) -> sqrt(((ra_a-ra_b)*cos(deg2rad(dec_a)))^2 + (dec_a-dec_b)^2) # units of degrees
 
-function deg2arcsec(deg::Float64)
-    return deg * 3600.0
-end
-
-function arcsec2deg(arcsec::Float64)
-    return arcsec / 3600.0
-end
+small_angle_distance((ra_a, dec_a), (ra_b, dec_b)) = sqrt(((ra_a-ra_b)*cos(deg2rad(dec_a)))^2 + (dec_a-dec_b)^2) # units of degrees
+image_is_larger(a::AbstractArray, b::AbstractArray) = all(map(>, size(a), size(b)))
+deg2arcsec(deg::Real) = deg * 3600.0
+arcsec2deg(arcsec::Real) = arcsec / 3600.0
 
 function all_header_keywords_match(ha, hb, kws)
     for kw in kws
@@ -99,9 +95,19 @@ function make_circle_mask(img_size::Tuple{Int, Int}, radius::Int; center::Union{
     return mask
 end
 
-function image_is_larger(a::AstroImage, b::AstroImage)
-    return all(map(>, size(a), size(b)))
+function make_sigma_clip_mask(image_data::AbstractMatrix, n_sigma::Real = 9.0)
+    if isempty(image_data)
+        return BitMatrix(zeros(Bool, 0, 0))
+    end
+
+    mean_val = median(image_data)
+    std_dev = std(image_data)
+    threshold = mean_val + (n_sigma * std_dev)
+    mask = image_data .> threshold
+
+    return mask
 end
+
 
 function crop(img::AbstractArray, crop_size::Tuple{Int,Int}; center=nothing)
     h, w = size(img)

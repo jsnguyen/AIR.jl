@@ -1,4 +1,3 @@
-using OrderedCollections
 using Glob
 using AstroImages
 using ImageFiltering

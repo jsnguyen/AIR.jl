@@ -1,10 +1,8 @@
 using OrderedCollections
-
 using Glob
 using FITSIO
 using SkyCoords
 using AstroAngles
-using Plots
 using Statistics
 using AstroImages
 
