@@ -25,10 +25,14 @@ function align_to_template(frame::AstroImage, template::AstroImage; σ::Real=5.0
     x0, y0 = fit[2], fit[3]
 
     # 4) compute 1‐based center of cc
-    cy = (size(cc,1)) / 2
-    cx = (size(cc,2)) / 2
+
+    # no idea why there's a -2 here but it works better
+    # something to do with indexing and convolution sizes?
+    cy = (size(cc,1)-2) / 2
+    cx = (size(cc,2)-2) / 2
 
     # 5) offset = (Δrow, Δcol)
+    #offset = (y0 - cy, x0 - cx)
     offset = (y0 - cy, x0 - cx)
     @info "offset" offset=offset
 
@@ -100,11 +104,11 @@ autolog("$(@__FILE__).log") do
 
         frames = load_frames(sequence_obslog, key) 
         target = chop(key, tail=2)
-        template_psf = load(joinpath(sequences_folder, "$(target)_1_template_psf.fits"))
+        template_psf = load(joinpath(sequences_folder, "$(target)_1_template_psf_cored.fits"))
 
-        coarse_size = 500 # size of the coarse crop
-        intermediate_size = 450 # size of the intermediate crop
-        final_size = 400
+        coarse_size = 530 # size of the coarse crop
+        intermediate_size = 515 # size of the intermediate crop
+        final_size = 500
         
         # Arrays to store background measurements
         background_levels = Float64[]
@@ -127,9 +131,11 @@ autolog("$(@__FILE__).log") do
         @info "Background levels for sequence $key: $(round.(background_levels, digits=3))"
         @info "Mean background: $(round(mean_background, digits=3)), Std: $(round(std(background_levels), digits=3))"
 
+        n_sigma_ccr = 50.0
+
         aligned_frames = AstroImage[]
         for frame in cropped_frames
-            aligned = align_to_template(frame, template_psf; σ=8.0, fillval=0.0)
+            aligned = align_to_template(frame, template_psf; σ=n_sigma_ccr, fillval=0.0)
             aligned = aligned |> x -> crop(x, (intermediate_size, intermediate_size))
             # Replace NaN or Inf values with zero
             aligned.data .= ifelse.(isfinite.(aligned.data), aligned.data, 0.0)
@@ -138,15 +144,15 @@ autolog("$(@__FILE__).log") do
 
         fine_aligned_frames = AstroImage[]
         for frame in aligned_frames
-            aligned = align_to_template(frame, aligned_frames[1]; σ=8.0, fillval=0.0)
+            aligned = align_to_template(frame, aligned_frames[1]; σ=n_sigma_ccr, fillval=0.0)
             aligned = aligned |> x -> crop(x, (final_size, final_size)) |> x -> x.-mean_background
             # Replace NaN or Inf values with zero
             aligned.data .= ifelse.(isfinite.(aligned.data), aligned.data, 0.0)
             push!(fine_aligned_frames, aligned)
         end
 
-        save(joinpath(sequences_folder, "$(key)_aligned_frames.fits"), framelist_to_cube(fine_aligned_frames))
-
+        save(joinpath(sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
+        
     end
 
 end
