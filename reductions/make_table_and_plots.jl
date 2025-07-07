@@ -1,8 +1,8 @@
 using Glob
 using Printf
+using ProgressMeter
 
 using AIR
-
 
 autolog("$(@__FILE__).log") do
 
