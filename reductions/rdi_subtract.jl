@@ -10,94 +10,6 @@ using Rotations
 using AIR
 import AIR.crop 
 
-function align_to_template(frame::AstroImage, template::AstroImage; σ::Real=5.0, fillval=NaN)
-    # 1) cross‐correlate
-    cc = imfilter(frame.data, centered(template.data))
-
-    # 2) find integer peak
-    _, ci = findmax(cc)
-    r, c = Tuple(ci)
-
-    # 3) sub‐pixel Gaussian fit: p = [A, x0, y0, σ]
-    p0  = [cc[ci], Float64(c), Float64(r), σ]
-    fit = gaussian2d_fixedwidth_fit(cc, p0, σ)
-    x0, y0 = fit[2], fit[3]
-
-    # 4) compute 1‐based center of cc
-    cy = (size(cc,1)) / 2
-    cx = (size(cc,2)) / 2
-
-    # 5) offset = (Δrow, Δcol)
-    offset = (y0 - cy, x0 - cx)
-    @info "offset" offset=offset
-
-    # 6) warp the raw data by this sub‐pixel shift
-    warped = warp(frame.data,
-                  Translation(offset...),
-                  axes(frame.data),
-                  fill=fillval)
-
-    # 7) return with original header
-    return AstroImage(warped, frame.header)
-end
-
-"""
-    measure_background(frame::AstroImage; mask_radius=50, edge_buffer=20)
-
-Measure the background level in a frame while masking out the PSF.
-Returns the median background level from an annular region.
-"""
-function measure_background(frame::AstroImage; mask_radius=50)
-    data = frame.data
-    rows, cols = size(data)
-    
-    # Find the center of the PSF (brightest pixel)
-    _, center_idx = findmax(data)
-    cy, cx = Tuple(center_idx)
-    
-    # Create mask to exclude PSF and edges
-    mask = trues(size(data))
-    
-    # Mask out the PSF (circular region around center)
-    for i in 1:rows, j in 1:cols
-        r = sqrt((i - cy)^2 + (j - cx)^2)
-        if r < mask_radius
-            mask[i, j] = false
-        end
-    end
-    
-    # Extract background pixels
-    background_pixels = data[mask]
-    
-    if length(background_pixels) == 0
-        @warn "No background pixels found, returning 0"
-        return 0.0
-    end
-    
-    # Return median background level
-    return median(background_pixels)
-end
-
-
-"""
-    rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
-
-Rotate an image about its center by the specified angle in degrees.
-"""
-function rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
-    angle_rad = deg2rad(angle_degrees)
-    
-    rows, cols = size(img.data)
-    center = (rows + 1) / 2, (cols + 1) / 2
-    
-    # Create rotation about specified center point
-    rotation = recenter(RotMatrix(angle_rad), center)
-    
-    rotated_data = warp(img.data, rotation, axes(img.data), fill=fillval)
-    
-    return AstroImage(rotated_data, img.header)
-end
-
 autolog("$(@__FILE__).log") do
 
     sequence_obslog_folder = "reductions/obslogs"
@@ -136,6 +48,7 @@ autolog("$(@__FILE__).log") do
         residual, optimal_params = subtract_psf_with_shift(frame, hbc650_median; mask_radius=inner_mask_radius)
 
         angle, _ = calculate_north_angle(residual.header)
+
         derot = rotate_image_center(residual, -angle)
         derot[inner_circle_mask] .= NaN
         derot[.!outer_circle_mask] .= NaN

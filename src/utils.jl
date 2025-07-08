@@ -3,6 +3,8 @@ small_angle_distance((ra_a, dec_a), (ra_b, dec_b)) = sqrt(((ra_a-ra_b)*cos(deg2r
 image_is_larger(a::AbstractArray, b::AbstractArray) = all(map(>, size(a), size(b)))
 deg2arcsec(deg::Real) = deg * 3600.0
 arcsec2deg(arcsec::Real) = arcsec / 3600.0
+pixel_center_coordinates = x ->  x + 0.5
+cartesian_coordinates = x -> x - 0.5
 
 function all_header_keywords_match(ha, hb, kws)
     for kw in kws
@@ -109,29 +111,179 @@ function make_sigma_clip_mask(image_data::AbstractMatrix, n_sigma::Real = 9.0)
 end
 
 
+"""
+    crop(img::AbstractArray, crop_size::Tuple{Int,Int}; center=nothing)
+
+    Crop an image to a specified size around a center point.
+    Note that there is a call to "round" in the function, which means that we round to the closest integer "center"
+    If the center is not specified, it will be set to the center of the image.
+
+    Returns the cropped image, and the offsets in y and x direction
+    add offset to go from cropped to original coordinate system
+    subtract offset to go from original to cropped coordinate system
+"""
 function crop(img::AbstractArray, crop_size::Tuple{Int,Int}; center=nothing)
     h, w = size(img)
     crop_h, crop_w = crop_size
 
     if h==crop_h && w==crop_w
+        @info "No cropping needed, input size equals output size!"
         return img  # No cropping needed, return the original image
     end
 
-    if center === nothing
-        center_row = Int(round(h/2))
-        center_col = Int(round(w/2))
-    else
-        center_row, center_col = center
+    # both not even or both not odd
+    if !(iseven(h) && iseven(crop_h) || isodd(h) && isodd(crop_h))
+        @debug "Input and output height are not both even or both odd, final image will offset"
     end
 
-    start_row = center_row - div(crop_h, 2)
-    end_row   = start_row + crop_h - 1
-    start_col = center_col - div(crop_w, 2)
-    end_col   = start_col + crop_w - 1
+    # both not even or both not odd
+    if !(iseven(w) && iseven(crop_w) || isodd(w) && isodd(crop_w))
+        @debug "Input and output width are not both even or both odd, final image will offset"
+    end
+
+    if center === nothing
+        image_center_y = (h/2)+1
+        image_center_x = (w/2)+1
+    else
+        image_center_y, image_center_x = center
+    end
+
+    # round to guarantee that this works
+    start_row = round(Int, image_center_y - crop_h/2)
+    end_row   = round(Int, start_row + crop_h - 1)
+    start_col = round(Int, image_center_x - crop_w/2)
+    end_col   = round(Int, start_col + crop_w - 1)
 
     if start_row < 1 || start_col < 1 || end_row > h || end_col > w
-        error("Crop would go out of bounds: img size $(size(img)), crop from ($(start_row),$(start_col)) to ($(end_row),$(end_col))")
+        error("Crop would go out of bounds: img size $(size(img)), $(image_center_y), $(image_center_x), crop_size $(crop_size)")
     end
 
-    img[start_row:end_row, start_col:end_col]
+    # add this number to go from cropped to original coordinate system
+    # subtract this number to go from original to cropped coordinate system
+    offset_x = start_col - 1
+    offset_y = start_row - 1
+
+    return img[start_row:end_row, start_col:end_col], offset_y, offset_x
+end
+
+function subpixel_crop(img::AbstractArray, crop_size::Tuple{Int,Int}, center::Tuple{Float64,Float64})
+    h, w = size(img)
+    crop_h, crop_w = crop_size
+
+    if h==crop_h && w==crop_w
+        @info "No cropping needed, input size equals output size!"
+        return img  # No cropping needed, return the original image
+    end
+
+    cy, cx = center
+
+    image_center_y = (h/2)+1
+    image_center_x = (w/2)+1
+
+    # this madness is to compensate for the truncation that we do in the end
+    if iseven(h)
+        if iseven(crop_h)
+            offset_x = 0.5
+        else
+            offset_x = 1.0
+        end
+    else
+        if iseven(crop_h)
+            offset_x = 1.0
+        else
+            offset_x = 0.5
+        end
+    end
+
+    if iseven(w)
+        if iseven(crop_w)
+            offset_y = 0.5
+        else
+            offset_y = 1.0
+        end
+    else
+        if iseven(crop_w)
+            offset_y = 1.0
+        else
+            offset_y = 0.5
+        end
+    end
+
+    tx = cx - image_center_x 
+    ty = cy - image_center_y
+
+    warped_img = warp(img, Translation(ty+offset_y, tx+offset_x), axes(img))
+
+    start_row = trunc(Int, image_center_y - crop_h/2)
+    end_row = start_row + crop_h - 1
+    start_col = trunc(Int, image_center_x - crop_w/2)
+    end_col = start_col + crop_w - 1
+
+    if start_row < 1 || start_col < 1 || end_row > h || end_col > w
+        error("Crop would go out of bounds: img size $(size(img)), $(image_center_y), $(image_center_x), crop_size $(crop_size)")
+    end
+
+    # add this number to go from cropped to original coordinate system
+    # subtract this number to go from original to cropped coordinate system
+    ox = start_col - 1 + tx + offset_x
+    oy = start_row - 1 + ty + offset_y
+    
+    return warped_img[start_row:end_row, start_col:end_col], oy, ox
+end
+
+
+"""
+    measure_background(frame::AstroImage; mask_radius=200)
+
+Measure the background level in a frame while masking out the PSF.
+Returns the median background level from an annular region.
+"""
+function measure_background(frame::AstroImage; mask_radius=200)
+    data = frame.data
+    rows, cols = size(data)
+    
+    # Find the center of the PSF (brightest pixel)
+    _, center_idx = findmax(data)
+    cy, cx = Tuple(center_idx)
+    
+    # Create mask to exclude PSF and edges
+    mask = trues(size(data))
+    
+    # Mask out the PSF (circular region around center)
+    for i in 1:rows, j in 1:cols
+        r = sqrt((i - cy)^2 + (j - cx)^2)
+        if r < mask_radius
+            mask[i, j] = false
+        end
+    end
+    
+    # Extract background pixels
+    background_pixels = data[mask]
+    
+    if length(background_pixels) == 0
+        @warn "No background pixels found, returning 0"
+        return 0.0
+    end
+    
+    # Return median background level
+    return median(background_pixels)
+end
+
+"""
+    rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
+
+Rotate an image about its center by the specified angle in degrees.
+"""
+function rotate_image_center(img::AbstractArray, angle_degrees; fillval=0.0)
+    angle_rad = deg2rad(angle_degrees)
+    
+    rows, cols = size(img.data)
+    center = rows/2 + 0.5, cols/2 + 0.5
+    
+    # Create rotation about specified center point
+    rotation = recenter(RotMatrix(angle_rad), center)
+    
+    rotated_data = warp(img, rotation, axes(img), fill=fillval)
+    
+    return rotated_data
 end

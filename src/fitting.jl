@@ -1,169 +1,3 @@
-function gaussian2d_fit(data::Matrix{Float64}, initial_guess::Vector{Float64})
-    # Define the 2D Gaussian model
-    model(coords, p) = p[1] .* exp.(-((coords[:,1] .- p[2] .- 0.5).^2 ./ (2 * p[4]^2) + (coords[:, 2] .- p[3] .- 0.5).^2 ./ (2 * p[5]^2))) .+ p[6]
-
-    # Create the coordinate grid
-    rows, cols = size(data)
-
-    x = repeat(1.0:cols, inner=rows) # x-coordinates repeated for each row
-    y = repeat(1.0:rows, outer=cols) # y-coordinates repeated for each column
-    coords = hcat(x, y)  # shape is (2, rows*cols)
-
-    # Perform the fit
-    fit = curve_fit(model, coords, vec(data), initial_guess)
-
-    return fit.param
-end
-
-function gaussian2d_fixedwidth_fit(data::Matrix{Float64}, initial_guess::Vector{Float64}, width::Float64)
-    # Define the 2D Gaussian model
-    # 1-based indexing here means we have to subtract 0.5 from the x and y coordinates to center the gaussian on the pixel grid
-    model(coords, p) = p[1] .* exp.(-((coords[:,1] .- p[2] .- 0.5).^2 ./ (2 * width^2) + (coords[:, 2] .- p[3] .- 0.5).^2 ./ (2 * width^2))) .+ p[4]
-
-    # Create the coordinate grid
-    rows, cols = size(data)
-
-    x = repeat(1.0:cols, inner=rows) # x-coordinates repeated for each row
-    y = repeat(1.0:rows, outer=cols) # y-coordinates repeated for each column
-    coords = hcat(x, y)  # shape is (2, rows*cols)
-
-    # Perform the fit
-    fit = curve_fit(model, coords, vec(data), initial_guess)
-
-    return fit.param
-end
-
-"""
-    fit_gaussian_center_lstsq(data; sigma=5.0)
-
-Fit a 2D Gaussian using least squares to find the PSF center with sub-pixel precision.
-Returns a tuple: (center_y, center_x, amplitude, background, fit_quality).
-
-# Arguments
-- `data`: 2D array containing the PSF image
-- `sigma`: Standard deviation (width) of the Gaussian model (default: 5.0)
-
-# Returns
-- `center_y`: Y-coordinate of the fitted center (row index)
-- `center_x`: X-coordinate of the fitted center (column index)  
-- `amplitude`: Peak amplitude of the fitted Gaussian
-- `background`: Fitted background level
-- `fit_quality`: Normalized residual metric (lower is better)
-
-The function uses a hybrid approach:
-1. Initial guess from brightest pixel location
-2. Nonlinear optimization (Nelder-Mead) for center position (cy, cx)
-3. Linear least squares for amplitude and background at each trial center
-
-Model: I(i,j) = amplitude * exp(-0.5 * ((i-cy)² + (j-cx)²) / σ²) + background
-
-# Example
-```julia
-center_y, center_x, amplitude, background, quality = fit_gaussian_center_lstsq(psf_data, sigma=3.0)
-```
-"""
-function fit_gaussian_center_lstsq(data; sigma=5.0)
-    rows, cols = size(data)
-    
-    # Initial guess: brightest pixel location
-    _, max_idx = findmax(data)
-    initial_cy, initial_cx = Float64.(Tuple(max_idx))
-    
-    @info "Starting Gaussian center fit with initial guess: ($(round(initial_cy, digits=2)), $(round(initial_cx, digits=2)))"
-    
-    # Variables to store best fit results
-    best_amplitude = 0.0
-    best_background = 0.0
-    best_residual = Inf
-    
-    # Objective function: finds optimal center position
-    function objective(center_params)
-        cy, cx = center_params[1], center_params[2]
-        
-        # Ensure center is within image bounds
-        if cy < 1 || cy > rows || cx < 1 || cx > cols
-            return 1e10
-        end
-        
-        # Build linear system for least squares: A * [amplitude, background] = b
-        n_pixels = rows * cols
-        A = zeros(n_pixels, 2)  # Design matrix
-        b = zeros(n_pixels)     # Observed intensities
-        
-        pixel_idx = 1
-        for i in 1:rows, j in 1:cols
-            # Gaussian term at pixel (i,j) for center (cy,cx)
-            r_squared = (i - cy)^2 + (j - cx)^2
-            gaussian_term = exp(-0.5 * r_squared / sigma^2)
-            
-            A[pixel_idx, 1] = gaussian_term  # Coefficient for amplitude
-            A[pixel_idx, 2] = 1.0            # Coefficient for background
-            b[pixel_idx] = data[i, j]        # Observed intensity
-            pixel_idx += 1
-        end
-        
-        # Solve for amplitude and background using least squares
-        try
-            fit_params = A \ b
-            amplitude, background = fit_params[1], fit_params[2]
-            
-            # Calculate residual sum of squares
-            predicted = A * fit_params
-            residuals = b - predicted
-            ssr = sum(residuals.^2)
-            
-            # Penalize unphysical solutions
-            if amplitude <= 0
-                ssr += 1e10  # Amplitude must be positive
-            end
-            if background < 0
-                ssr += 1e6   # Background should be non-negative
-            end
-            
-            # Update best fit parameters if this is the best so far
-            if ssr < best_residual
-                best_amplitude = amplitude
-                best_background = background
-                best_residual = ssr
-            end
-            
-            return ssr
-            
-        catch e
-            @debug "Least squares failed for center ($cy, $cx): $e"
-            return 1e10
-        end
-    end
-    
-    # Optimize center position using Nelder-Mead simplex method
-    @info "Optimizing Gaussian center position..."
-    result = optimize(objective, 
-                     [initial_cy, initial_cx],
-                     NelderMead(),
-                     Optim.Options(iterations = 200, 
-                                  f_tol = 1e-8))
-    
-    # Extract optimization results
-    optimal_center = Optim.minimizer(result)
-    final_residual = Optim.minimum(result)
-    converged = Optim.converged(result)
-    
-    cy_fit, cx_fit = optimal_center[1], optimal_center[2]
-    
-    # Calculate normalized fit quality metric
-    total_signal = sum(abs.(data))
-    fit_quality = sqrt(best_residual / length(data)) / (total_signal / length(data))
-    
-    @info "Gaussian fit completed:"
-    @info "  Center: ($(round(cy_fit, digits=3)), $(round(cx_fit, digits=3)))"
-    @info "  Amplitude: $(round(best_amplitude, digits=1))"
-    @info "  Background: $(round(best_background, digits=1))"
-    @info "  Fit quality: $(round(fit_quality, digits=4)) (lower is better)"
-    @info "  Converged: $converged"
-    
-    return cy_fit, cx_fit, best_amplitude, best_background, fit_quality
-end
-
 
 """
     subtract_psf_with_shift(target, reference; initial_shift=(0.0, 0.0), search_radius=5.0, initial_scale=1.0, initial_offset=0.0)
@@ -271,144 +105,93 @@ function subtract_psf_with_shift(target, reference; initial_shift=(0.0, 0.0), se
     return residual_clean, optimal_result
 end
 
-"""
-    fit_gaussian_center_variable_sigma(data; initial_sigma=5.0, min_sigma=1.0, max_sigma=20.0)
 
-Fit a 2D Gaussian using least squares to find the PSF center with sub-pixel precision and variable width.
-Returns a tuple: (center_y, center_x, amplitude, background, sigma, fit_quality).
+function fit_generic_kernel(data, initial_guess, kernel)
 
-# Arguments
-- `data`: 2D array containing the PSF image
-- `initial_sigma`: Initial guess for the Gaussian width (default: 5.0)
-- `min_sigma`: Minimum allowed sigma value (default: 1.0)
-- `max_sigma`: Maximum allowed sigma value (default: 20.0)
+    function loss(params)
+        rows, cols = size(data)
+        xs = (1:cols)'
+        ys = 1:rows
 
-# Returns
-- `center_y`: Y-coordinate of the fitted center (row index)
-- `center_x`: X-coordinate of the fitted center (column index)  
-- `amplitude`: Peak amplitude of the fitted Gaussian
-- `background`: Fitted background level
-- `sigma`: Fitted standard deviation (width) of the Gaussian
-- `fit_quality`: Normalized residual metric (lower is better)
-
-The function uses a hybrid approach:
-1. Initial guess from brightest pixel location and provided sigma
-2. Nonlinear optimization (Nelder-Mead) for center position (cy, cx) AND sigma
-3. Linear least squares for amplitude and background at each trial center/sigma
-
-Model: I(i,j) = amplitude * exp(-0.5 * ((i-cy)² + (j-cx)²) / σ²) + background
-
-# Example
-```julia
-center_y, center_x, amplitude, background, sigma, quality = fit_gaussian_center_variable_sigma(psf_data, initial_sigma=3.0)
-```
-"""
-function fit_gaussian_center_variable_sigma(data; initial_sigma=5.0, min_sigma=1.0, max_sigma=20.0)
-    rows, cols = size(data)
-    
-    # Initial guess: brightest pixel location
-    _, max_idx = findmax(data)
-    initial_cy, initial_cx = Float64.(Tuple(max_idx))
-    
-    @info "Starting variable-sigma Gaussian fit with initial guess: center=($(round(initial_cy, digits=2)), $(round(initial_cx, digits=2))), sigma=$(round(initial_sigma, digits=2))"
-    
-    # Variables to store best fit results
-    best_amplitude = 0.0
-    best_background = 0.0
-    best_sigma = initial_sigma
-    best_residual = Inf
-    
-    # Objective function: finds optimal center position AND sigma
-    function objective(params)
-        cy, cx, sigma = params[1], params[2], params[3]
-        
-        # Ensure center is within image bounds
-        if cy < 1 || cy > rows || cx < 1 || cx > cols
-            return 1e10
-        end
-        
-        # Ensure sigma is within reasonable bounds
-        if sigma < min_sigma || sigma > max_sigma
-            return 1e10
-        end
-        
-        # Build linear system for least squares: A * [amplitude, background] = b
-        n_pixels = rows * cols
-        A = zeros(n_pixels, 2)  # Design matrix
-        b = zeros(n_pixels)     # Observed intensities
-        
-        pixel_idx = 1
-        for i in 1:rows, j in 1:cols
-            # Gaussian term at pixel (i,j) for center (cy,cx) and width sigma
-            r_squared = (i - cy)^2 + (j - cx)^2
-            gaussian_term = exp(-0.5 * r_squared / sigma^2)
-            
-            A[pixel_idx, 1] = gaussian_term  # Coefficient for amplitude
-            A[pixel_idx, 2] = 1.0            # Coefficient for background
-            b[pixel_idx] = data[i, j]        # Observed intensity
-            pixel_idx += 1
-        end
-        
-        # Solve for amplitude and background using least squares
-        try
-            fit_params = A \ b
-            amplitude, background = fit_params[1], fit_params[2]
-            
-            # Calculate residual sum of squares
-            predicted = A * fit_params
-            residuals = b - predicted
-            ssr = sum(residuals.^2)
-            
-            # Penalize unphysical solutions
-            if amplitude <= 0
-                ssr += 1e10  # Amplitude must be positive
-            end
-            if background < 0
-                ssr += 1e6   # Background should be non-negative
-            end
-            
-            # Update best fit parameters if this is the best so far
-            if ssr < best_residual
-                best_amplitude = amplitude
-                best_background = background
-                best_sigma = sigma
-                best_residual = ssr
-            end
-            
-            return ssr
-            
-        catch e
-            @debug "Least squares failed for center ($cy, $cx), sigma=$sigma: $e"
-            return 1e10
-        end
+        residual = data .- kernel.(xs, ys, params...)
+        return sum(residual .^ 2)
     end
-    
-    # Optimize center position AND sigma using Nelder-Mead simplex method
-    @info "Optimizing Gaussian center position and width..."
-    result = optimize(objective, 
-                     [initial_cy, initial_cx, initial_sigma],
-                     NelderMead(),
-                     Optim.Options(iterations = 300,  # More iterations for 3D optimization
-                                  f_tol = 1e-8))
-    
-    # Extract optimization results
-    optimal_params = Optim.minimizer(result)
-    final_residual = Optim.minimum(result)
-    converged = Optim.converged(result)
-    
-    cy_fit, cx_fit, sigma_fit = optimal_params[1], optimal_params[2], optimal_params[3]
-    
-    # Calculate normalized fit quality metric
-    total_signal = sum(abs.(data))
-    fit_quality = sqrt(best_residual / length(data)) / (total_signal / length(data))
-    
-    @info "Variable-sigma Gaussian fit completed:"
-    @info "  Center: ($(round(cy_fit, digits=3)), $(round(cx_fit, digits=3)))"
-    @info "  Sigma: $(round(sigma_fit, digits=3))"
-    @info "  Amplitude: $(round(best_amplitude, digits=1))"
-    @info "  Background: $(round(best_background, digits=1))"
-    @info "  Fit quality: $(round(fit_quality, digits=4)) (lower is better)"
-    @info "  Converged: $converged"
-    
-    return cy_fit, cx_fit, best_amplitude, best_background, sigma_fit, fit_quality
+
+    res = optimize(loss, initial_guess, LBFGS())
+    return Optim.minimizer(res)
+
+end
+
+function fit_2d_gaussian(data, initial_guess; fixed_sigma=nothing, fixed_offset=nothing)
+
+    kernel = if fixed_sigma !== nothing && fixed_offset !== nothing
+        if length(initial_guess) != 3
+            error("Initial guess must have 3 parameters when both fixed_sigma and fixed_offset are provided")
+        end
+        (xs, ys, amp, x0, y0) -> gaussian_2d(xs, ys, amp, x0, y0, fixed_sigma, fixed_sigma, fixed_offset)
+    elseif fixed_sigma !== nothing
+        if length(initial_guess) != 4
+            error("Initial guess must have 4 parameters when fixed_sigma is provided")
+        end
+        (xs, ys, amp, x0, y0, offset) -> gaussian_2d(xs, ys, amp, x0, y0, fixed_sigma, fixed_sigma, offset)
+    elseif fixed_offset !== nothing
+        if length(initial_guess) != 5
+            error("Initial guess must have 5 parameters when fixed_offset is provided")
+        end
+        (xs, ys, amp, x0, y0, σx, σy) -> gaussian_2d(xs, ys, amp, x0, y0, σx, σy, fixed_offset)
+    else
+        gaussian_2d
+    end
+
+    return fit_generic_kernel(data, initial_guess, kernel)
+
+end
+
+function gaussian_2d(x, y, A, x0, y0, σx, σy, offset)
+    return A * exp(-((x - x0)^2 / (2 * σx^2) + (y - y0)^2 / (2 * σy^2))) + offset
+end
+
+function fit_and_crop(data, crop_size, initial_guess; fixed_sigma=nothing)
+
+    if fixed_sigma !== nothing
+        fit_params = fit_2d_gaussian(data, initial_guess, fixed_sigma=fixed_sigma)
+    else
+        fit_params = fit_2d_gaussian(data, initial_guess)
+    end
+
+    final_cx = fit_params[2] 
+    final_cy = fit_params[3]
+
+    data, oy, ox = subpixel_crop(data, crop_size, (final_cy, final_cx))
+
+    return data, final_cx, final_cy, oy, ox
+
+end
+
+function cross_correlation_center(image, template, sigma)
+    cc = imfilter(image, centered(template))
+
+    _, max_idx = findmax(image)
+    initial_cy, initial_cx = Float64.(Tuple(max_idx))
+    initial_guess = [cc[max_idx], initial_cx, initial_cy, median(cc)]
+    fit_params = fit_2d_gaussian(cc, initial_guess; fixed_sigma=sigma)
+
+    cx = fit_params[2] 
+    cy = fit_params[3]
+
+    return cy, cx
+
+end
+
+function cross_correlate_align(image, template, sigma)
+
+    cy, cx = cross_correlation_center(image, template, sigma)
+
+    offset_x = cx - size(image, 2) / 2
+    offset_y = cy - size(image, 1) / 2
+
+    warped = warp(image, Translation(offset_y, offset_x), axes(image))
+
+    return warped
+
 end

@@ -32,6 +32,5 @@ include("NIRC2.jl")
 include("reduction.jl")
 include("utils.jl")
 
-export small_angle_distance, pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, get_NIRC2_gain, make_and_clear, gaussian2d_fit, gaussian2d_fixedwidth_fit, make_circle_mask, calculate_north_angle, par_angle, load_sequences, fit_gaussian_center_lstsq, fit_gaussian_center_variable_sigma, subtract_psf_with_shift, fit_gaussian_center_variable_sigma, NIRC2_plate_scale
-
+export small_angle_distance, pretty_print_toml, deg2arcsec, arcsec2deg, all_header_keywords_match, load_obslog, load_frames, framelist_to_cube, match_keys, crop, subpixel_crop, make_sigma_clip_mask, make_masters, autolog, NIRC2_bad_pixel_mask, find_matching_master, find_closest_flat, find_closest_dark, get_NIRC2_gain, make_and_clear, make_circle_mask, calculate_north_angle, par_angle, load_sequences, fit_gaussian_center_variable_sigma, subtract_psf_with_shift, NIRC2_plate_scale, fit_generic_kernel, fit_2d_gaussian, gaussian_2d, fit_and_crop, pixel_center_coordinates, cartesian_coordinates, cross_correlate_align, measure_background, rotate_image_center
 end
