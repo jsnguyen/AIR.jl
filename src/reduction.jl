@@ -22,7 +22,7 @@ function make_masters(frames, keylist; n_sigma::Float64=6.0, median_size::Int64=
         # crop the original bad pixel mask to the size of the median frame
         bad_pixel_mask = copy(NIRC2_bad_pixel_mask)
         if size(bad_pixel_mask) != size(mf)
-            bad_pixel_mask = crop(NIRC2_bad_pixel_mask, size(mf))
+            bad_pixel_mask, _, _ = crop(NIRC2_bad_pixel_mask, size(mf))
         end
 
         # combine masks
@@ -82,7 +82,7 @@ function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
     if matched_flat !== nothing
         if (size(matched_flat) != size(frame))
             if image_is_larger(matched_flat, frame)
-                cropped_flat = crop(matched_flat.data, size(frame))
+                cropped_flat,_ ,_ = crop(matched_flat.data, size(frame))
                 matched_flat = AstroImage(cropped_flat, matched_flat.header)
             else
                 @warn "Flat frame is smaller than the target frame, not cropping: $(frame["FILENAME"])"
@@ -121,7 +121,7 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
             if i == 3
                 if  (size(matched_dark) != size(frame))
                     if image_is_larger(matched_dark, frame)
-                        cropped_dark = crop(matched_dark.data, size(frame))
+                        cropped_dark, _, _ = crop(matched_dark.data, size(frame))
                         matched_dark= AstroImage(cropped_dark, matched_dark.header)
                     else
                         @warn "Dark frame is smaller than the target frame, not cropping: $(frame["FILENAME"])"

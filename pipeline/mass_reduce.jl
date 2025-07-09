@@ -5,32 +5,9 @@ using Statistics
 
 using AIR
 
-function load_master(master_filename)
-    if isfile(master_filename)
-        master = load(master_filename, :)
-    else
-        @warn "No master found..."
-        master = AstroImage[]
-    end
-    return master
-end
+@autolog begin
 
-function load_masks(masks_filename)
-    # get all the masks and load by size
-    masks = Dict{Any, BitMatrix}()
-    if isfile(masks_filename)
-        ms = load(masks_filename, :)
-
-        for m in ms 
-            key = size(m)
-            masks[key] = BitMatrix(m)
-        end
-
-    end
-    return masks
-end
-
-autolog("$(@__FILE__).log") do
+    median_size = 5 # median pixel replacement size
 
     obslog_folder = "reductions/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
@@ -76,7 +53,7 @@ autolog("$(@__FILE__).log") do
             mask = copy(NIRC2_bad_pixel_mask)
 
             if size(mask) != size(sf)
-                mask = crop(NIRC2_bad_pixel_mask, size(sf))
+                mask, _, _ = crop(NIRC2_bad_pixel_mask, size(sf))
             end
 
             if haskey(masks, size(sf))
@@ -88,7 +65,6 @@ autolog("$(@__FILE__).log") do
 
             # make the median frame to do pixel replacement
             # not super efficient, but it works
-            median_size = 5
             median_sf = mapwindow(median, sf.data, (median_size, median_size))
 
             # finally, assign the median values to the masked pixels

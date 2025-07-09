@@ -5,6 +5,7 @@ deg2arcsec(deg::Real) = deg * 3600.0
 arcsec2deg(arcsec::Real) = arcsec / 3600.0
 pixel_center_coordinates = x ->  x + 0.5
 cartesian_coordinates = x -> x - 0.5
+remove_nan! = x -> @. x[~isfinite(x)] = 0
 
 function all_header_keywords_match(ha, hb, kws)
     for kw in kws

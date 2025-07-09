@@ -4,9 +4,8 @@ using AstroImages
 
 using AIR
 
-function make_darks(obslog, darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"])
+function make_darks(darks_frames; darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"])
 
-    darks_frames = load_frames(obslog, "darks")
     if !isempty(darks_frames)
         master_darks, master_darks_masks = make_masters(darks_frames, darks_keylist, method=median)
     else
@@ -17,13 +16,13 @@ function make_darks(obslog, darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"
     return collect(values(master_darks)), collect(values(master_darks_masks))
 end
 
-function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"])
+function make_darks_obslog(obslog; darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"])
+    darks_frames = load_frames(obslog, "darks")
+    master_darks, master_darks_masks = make_darks(darks_frames; darks_keylist=darks_keylist)
+    return master_darks, master_darks_masks
+end
 
-    #
-    # regular flat frames
-    #
-
-    flat_frames = load_frames(obslog, "flats")
+function make_flats(flat_frames, master_darks; flats_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"], flattype="REGULAR")
     if !isempty(flat_frames)
         master_flats, master_flats_masks = make_masters(flat_frames, flats_keylist, method=median)
 
@@ -33,10 +32,10 @@ function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "
             if matched_dark !== nothing
                 @info "Subtracting dark from master flat"
                 master_flats[key] .-= matched_dark
-                master_flats[key]["FLATTYPE"] = "REGULAR"
+                master_flats[key]["FLATTYPE"] = flattype
             else
                 @warn "No matching dark found for master flat"
-                master_flats[key]["FLATTYPE"] = "REGULAR+NODARK"
+                master_flats[key]["FLATTYPE"] = "$(flattype)+NODARK"
             end
 
             master_flats[key] ./= master_flats[key]["MAMEDIAN"]
@@ -47,30 +46,10 @@ function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "
         master_flats = Dict{Any, AstroImage}()
         master_flats_masks = Dict{Any, BitMatrix}()
     end
+    return master_flats, master_flats_masks
+end
 
-    #
-    # sky flat frames
-    #
-
-    sky_frames = load_frames(obslog, "flats_sky")
-    if !isempty(sky_frames)
-        master_flats_sky, master_flats_sky_masks = make_masters(sky_frames, flats_keylist, method=median)
-        for key in keys(master_flats_sky)
-            master_flats_sky[key] ./= master_flats_sky[key]["MAMEDIAN"]
-            master_flats_sky[key]["FLATTYPE"] = "SKY"
-        end
-
-    else
-        @warn "No sky flats found, skipping..."
-        master_flats_sky = Dict{Any, AstroImage}()
-        master_flats_sky_masks = Dict{Any, BitMatrix}()
-    end
-
-    #
-    # lamp flat frames
-    #
-
-    lampon_frames = load_frames(obslog, "flats_lampon")
+function make_lamp_flats(lampon_frames, lampoff_frames, master_darks; flats_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"])
     if !isempty(lampon_frames)
         master_lampon, master_lampon_masks = make_masters(lampon_frames, flats_keylist, method=median)
     else
@@ -79,7 +58,6 @@ function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "
         master_lampon_masks = Dict{Any, BitMatrix}()
     end
 
-    lampoff_frames = load_frames(obslog, "flats_lampoff")
     if !isempty(lampoff_frames)
         master_lampoff, master_lampoff_masks = make_masters(lampoff_frames, flats_keylist, method=median)
     else
@@ -128,11 +106,38 @@ function make_flats(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "
 
     end
 
+    return master_flat_lamp, master_flat_lamp_masks
+end
+
+function make_flats_obslog(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"], flattype="REGULAR")
+
+    #
+    # regular flat frames
+    #
+
+    flat_frames = load_frames(obslog, "flats")
+    master_flats, master_flats_masks = make_flats(flat_frames, master_darks; flats_keylist=flats_keylist)
+
+    #
+    # sky flat frames
+    #
+
+    sky_frames = load_frames(obslog, "flats_sky")
+    master_flats_sky, master_flats_sky_masks = make_flats(sky_frames, master_darks; flats_keylist=flats_keylist, flattype="SKY")
+
+    #
+    # lamp flat frames
+    #
+
+    lampon_frames = load_frames(obslog, "flats_lampon")
+    lampoff_frames = load_frames(obslog, "flats_lampoff")
+    master_flat_lamp, master_flat_lamp_masks = make_lamp_flats(lampon_frames, lampoff_frames, master_darks; flats_keylist=flats_keylist)
+
     # ranking so that the best type of flat for a given key is always first on the list
     # when searching through flats, just pick the first one that matches
     master_flats = merge(master_flats, master_flats_sky, master_flat_lamp)
     master_flats = collect(values(master_flats)) # convert Dict to Vector
-    ranking = ["SKY", "LAMP", "LAMP+DARK", "REGULAR", "LAMP+NODARK", "REGULAR+NODARK"]
+    ranking = ["SKY", "LAMP", "LAMP+DARK", "REGULAR", "SKY+NODARK", "LAMP+NODARK", "REGULAR+NODARK"]
     rank_dict = Dict(r => i for (i, r) in enumerate(ranking))
     sort!(master_flats, by = frame -> get(rank_dict, frame["FLATTYPE"], length(ranking)+1))
 
@@ -164,10 +169,10 @@ function make_master_masks(master_darks_masks, master_flats_masks)
         master_masks[key] = mm
     end
 
-    return master_masks
+    return collect(values(master_masks))
 end
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     obslog_folder = "reductions/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
@@ -175,10 +180,10 @@ autolog("$(@__FILE__).log") do
         obslog = load_obslog(obslog_filename)
         
         @info "Making darks..."
-        master_darks, master_darks_masks = make_darks(obslog)
+        master_darks, master_darks_masks = make_darks_obslog(obslog)
 
         @info "Making flats..."
-        master_flats, master_flats_masks = make_flats(obslog, master_darks)
+        master_flats, master_flats_masks = make_flats_obslog(obslog, master_darks)
 
         darks_filename = joinpath(obslog["data_folder"], "darks.fits")
         flats_filename = joinpath(obslog["data_folder"], "flats.fits")
@@ -194,7 +199,7 @@ autolog("$(@__FILE__).log") do
 
         master_masks = make_master_masks(master_darks_masks, master_flats_masks)
 
-        save(master_mask_filename, collect(values(master_masks))...)
+        save(master_mask_filename, master_masks...)
     end
 
 end

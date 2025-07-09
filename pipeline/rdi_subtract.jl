@@ -4,13 +4,14 @@ using ImageFiltering
 using Statistics
 using ProgressMeter
 using CoordinateTransformations
-import CoordinateTransformations: recenter
-using Rotations
+using Optim
 
 using AIR
 import AIR.crop 
 
-autolog("$(@__FILE__).log") do
+
+
+@autolog begin
 
     sequence_obslog_folder = "reductions/obslogs"
     sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-06-16_sequences.toml")
@@ -34,6 +35,7 @@ autolog("$(@__FILE__).log") do
     cube = framelist_to_cube(hbc650)
     hbc650_median = median(cube, dims=3) |> x -> dropdims(x, dims=3)
 
+    search_radius = 5
     inner_mask_radius = 60
     outer_mask_radius = 230
     inner_circle_mask = make_circle_mask(size(as209[1]), inner_mask_radius)
@@ -41,29 +43,30 @@ autolog("$(@__FILE__).log") do
 
     # Perform PSF subtraction with sub-pixel shifting, scaling, and offset
     derotated = AstroImage[]
+    initial_guess = [0.0, 0.0, 1.0, 0.0]
     for frame in as209
         frame ./= frame["ITIME"]
 
         @info "Performing PSF subtraction with sub-pixel shift, scale, and offset optimization..."
-        residual, optimal_params = subtract_psf_with_shift(frame, hbc650_median; mask_radius=inner_mask_radius)
+        #residual, optimal_params = subtract_psf_with_shift(frame, hbc650_median; mask_radius=inner_mask_radius)
+        residual, optimal_params = optimal_subtract_target(frame, hbc650_median, initial_guess, search_radius; inner_mask_radius=inner_mask_radius, outer_mask_radius=outer_mask_radius)
+
 
         angle, _ = calculate_north_angle(residual.header)
-
         derot = rotate_image_center(residual, -angle)
         derot[inner_circle_mask] .= NaN
         derot[.!outer_circle_mask] .= NaN
         push!(derotated, derot)
-        
-        @info "Optimal shift: ($(round(optimal_params.shift[1], digits=3)), $(round(optimal_params.shift[2], digits=3)))"
-        @info "Optimal scale: $(round(optimal_params.scale, digits=3))"
-        @info "Optimal offset: $(round(optimal_params.offset, digits=3))"
-        @info "Residual statistics: min=$(round(minimum(derot), digits=3)), max=$(round(maximum(derot), digits=3)), std=$(round(std(derot), digits=3))"
+
+        initial_guess = optimal_params  # Use the last optimal parameters as the initial guess for the next frame
+        @info "Optimal Params" optimal_params=optimal_params
+
     end
 
     as209_median = framelist_to_cube(derotated) |> x -> median(x, dims=3) |> x -> dropdims(x, dims=3)
     as209_median[inner_circle_mask] .= NaN
     as209_median[.!outer_circle_mask] .= NaN
-    
+
     # Save results
     save(joinpath(sequences_folder, "as209_median.fits"), as209_median)
     save(joinpath(sequences_folder, "as209_psf_subtraction_derotated.fits"), derotated...)

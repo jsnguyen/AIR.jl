@@ -10,7 +10,7 @@ using CoordinateTransformations
 using AIR
 import AIR.crop 
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     sequence_obslog_folder = "reductions/obslogs"
     sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-06-16_sequences.toml")
@@ -36,7 +36,7 @@ autolog("$(@__FILE__).log") do
         coarse_size = 530 # size of the coarse crop
         intermediate_size = 515 # size of the intermediate crop
         final_size = 500
-        
+
         # subtract off mean background
         mean_background = 0.0
         for frame in sequences[key]
@@ -56,7 +56,7 @@ autolog("$(@__FILE__).log") do
             cropped,_,_ = crop(frame, (coarse_size, coarse_size), center=Tuple(coarse_center))
             push!(cropped_frames, cropped)
         end
-        
+
         @info "Mean background: $(@sprintf("%.3f", mean_background))"
 
         n_sigma_ccr = 30.0
@@ -87,7 +87,7 @@ autolog("$(@__FILE__).log") do
         end
 
         save(joinpath(sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
-        
+
     end
 
 end

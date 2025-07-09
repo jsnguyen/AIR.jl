@@ -8,22 +8,23 @@ using AstroImages
 
 using AIR
 
-function contains_target(data_folder, subfolder; n_cutoff=3, arcsec_threshold=100)
+function contains_target(data_folder, subfolder, coords; fk4_coords=nothing, n_cutoff=3, arcsec_threshold=100)
 
     filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
-    icrs_ra = hms"16 49 15.3034917000"deg
-    icrs_dec = dms"-14 22 08.643317664"deg
+    ra, dec = coords # assumed to be ICRS
 
-    fk4_ra = hms"16 46 25.3250542612"deg
-    fk4_dec = dms"-14 16 57.045137674"deg
 
-    @info "=== AS 209 coordinates ==="
-    @info "ICRS RA DEC" icrs_ra icrs_dec
-    @info "FK4 RA DEC" fk4_ra fk4_dec
+    # if no FK4 coords, just use ICRS coordinates
+    if fk4_coords !== nothing
+        fk4_ra, fk4_dec = fk4_coords
+    else
+        fk4_ra, fk4_dec = ra, dec
+    end
+
+
 
     target = String[]
-    distances = []
 
     for fn in filenames
         frame = load(fn)
@@ -43,12 +44,17 @@ function contains_target(data_folder, subfolder; n_cutoff=3, arcsec_threshold=10
         end
 
         if frame["RADECSYS"] == "FK4"
+
+            if fk4_coords === nothing
+                @warn "Files are in FK4 but no Fk4 coordinates provided!"
+            end
+
             @info "Using FK4 coordinates for $(fn)"
             ra = fk4_ra
             dec = fk4_dec
         else
-            ra = icrs_ra
-            dec = icrs_dec
+            ra = ra
+            dec = dec
         end
 
         radec_distance = deg2arcsec(small_angle_distance((ra, dec), (frame["RA"], frame["DEC"])))
@@ -88,7 +94,6 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder; lampoff_
     flats_lampoff = []
     darks = []
 
-    distances = []
     for fn in filenames
         frame = load(fn)
 
@@ -151,22 +156,32 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder; lampoff_
         write(io, toml_str)
     end
 
-    return distances
-
 end
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     observations_folder = "/Users/jsn/landing/projects/AIR.jl/data/"
 
+    ra      = hms"16 49 15.3034917000"deg
+    dec     = dms"-14 22 08.643317664"deg
+
+    fk4_ra  = hms"16 46 25.3250542612"deg
+    fk4_dec = dms"-14 16 57.045137674"deg
+
+    @info "=== AS 209 coordinates ==="
+    @info "ICRS RA DEC" ra dec
+    @info "FK4 RA DEC" fk4_ra fk4_dec
+
     subfolder = "raw"
+
     for date in readdir(observations_folder)
         output_folder = "/Users/jsn/landing/projects/AIR.jl/reductions/obslogs"
         data_folder = joinpath(observations_folder, date)
-        if contains_target(data_folder, subfolder)
+        if contains_target(data_folder, subfolder, (ra, dec); fk4_coords=(fk4_ra, fk4_dec))
             if isdir(data_folder)
-                distances = generate_obs_logs(date, data_folder, subfolder, output_folder)
+                generate_obs_logs(date, data_folder, subfolder, output_folder)
             end
         end
     end
+
 end

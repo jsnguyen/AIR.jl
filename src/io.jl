@@ -22,3 +22,28 @@ function load_frames(obslog, key; rejects::Vector{String}=String[])
 
     return frames
 end
+
+function load_master(master_filename)
+    if isfile(master_filename)
+        master = load(master_filename, :)
+    else
+        @warn "No master found..."
+        master = AstroImage[]
+    end
+    return master
+end
+
+function load_masks(masks_filename)
+    # get all the masks and load by size
+    masks = Dict{Any, BitMatrix}()
+    if isfile(masks_filename)
+        ms = load(masks_filename, :)
+
+        for m in ms 
+            key = size(m)
+            masks[key] = BitMatrix(m)
+        end
+
+    end
+    return masks
+end

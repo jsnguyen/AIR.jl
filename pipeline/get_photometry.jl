@@ -4,7 +4,7 @@ using AstroImages
 using AIR
 import AIR.crop 
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     sequence_obslog_folder = "reductions/obslogs"
     sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-06-16_sequences.toml")

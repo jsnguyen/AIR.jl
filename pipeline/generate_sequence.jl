@@ -29,7 +29,7 @@ function add_to_sequence!(sequences, seq, name)
     end
 end
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     reduced_obslog_folder = "reductions/obslogs"
     reduced_obslog_path = joinpath(reduced_obslog_folder, "2002-06-16_reduced.toml")

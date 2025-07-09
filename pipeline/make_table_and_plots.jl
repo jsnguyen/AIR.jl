@@ -4,7 +4,7 @@ using ProgressMeter
 
 using AIR
 
-autolog("$(@__FILE__).log") do
+@autolog begin
 
     obslog_folder = "reductions/obslogs"
     for obslog_filename in Glob.glob(joinpath(obslog_folder,"*_reduced.toml"))
