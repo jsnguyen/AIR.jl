@@ -25,21 +25,29 @@ end
 function add_to_sequence!(sequences, seq, name)
     for (i,key) in enumerate(keys(seq))
         @info "adding sequence" name i key length(seq[key])
-        sequences["$(name)_$(i)"] = seq[key]
+        sequences["reduced"]["$(name)_$(i)"] = seq[key]
     end
 end
 
-@autolog begin
+function empty_sequence(data_folder, date, seq_type)
+    OrderedDict{String,Any}("data_folder" => data_folder,
+                             "date" => date,
+                             seq_type => OrderedDict{String,Any}())
+end
 
-    reduced_obslog_folder = "reductions/obslogs"
-    reduced_obslog_path = joinpath(reduced_obslog_folder, "2002-06-16_reduced.toml")
-    
+# 2002-06-16, Epoch 1
+function generate_sequence_epoch_1()
+
+    obslog_folder = "pipeline/obslogs"
+    reduced_obslog_path = joinpath(obslog_folder, "2002-06-16_reduced.toml")
+    rejects_obslog_path = joinpath(obslog_folder, "2002-06-16_rejects.toml")
+    rejects = load_rejects(rejects_obslog_path)
+
     @info "Loading reduced_obslog from" reduced_obslog_path
-    reduced_obslog = load_obslog(reduced_obslog_path)
-    rejects_obslog_path = joinpath(reduced_obslog["data_folder"], reduced_obslog["subfolder"], "rejects.toml")
-    rejects_obslog = load_obslog(rejects_obslog_path)
-    reduced = load_frames(reduced_obslog, "reduced", rejects=rejects_obslog["rejects"])
+    reduced_obslog = Obslog(reduced_obslog_path, rejects=rejects)
+    reduced = reduced_obslog.reduced_sci
 
+    # got these from looking at the framelist and checking the frames
     hbc630_between = (412, 440)
     hbc650_between = (441, 465)
     as209_between = (466, 490)
@@ -53,9 +61,7 @@ end
     hbc650_seq = sequence_dict(hbc650_frames, keylist)
     as209_seq = sequence_dict(as209_frames, keylist)
 
-    sequences = OrderedDict{String,Any}("data_folder" => reduced_obslog["data_folder"],
-                                       "subfolder" => "reduced",
-                                       "date" => reduced_obslog["date"])
+    sequences = empty_sequence(reduced_obslog["data_folder"], reduced_obslog["date"], "reduced")
 
     add_to_sequence!(sequences, hbc630_seq, "hbc630")
     add_to_sequence!(sequences, hbc650_seq, "hbc650")
@@ -66,5 +72,13 @@ end
     open(sequence_filepath, "w") do io
         write(io, toml_str)
     end
+
+    return sequences
+
+end
+
+@autolog begin
+
+    generate_sequence_epoch_1()
 
 end

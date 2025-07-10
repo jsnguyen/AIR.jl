@@ -6,11 +6,11 @@ import AIR.crop
 
 @autolog begin
 
-    sequence_obslog_folder = "reductions/obslogs"
+    sequence_obslog_folder = "pipeline/obslogs"
     sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-06-16_sequences.toml")
 
     @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = load_obslog(sequence_obslog_path)
+    sequence_obslog = Obslog(sequence_obslog_path)
     sequences_folder = joinpath(sequence_obslog["data_folder"], "sequences")
     sequences = load_sequences(sequence_obslog)
 

@@ -144,12 +144,3 @@ function par_angle(HA, dec, lat)
     return rad2deg(parallang) # [deg]
 end
 
-function load_sequences(sequence_obslog)
-    sequences = Dict{String, Any}()
-    for key in keys(sequence_obslog)
-        if !(key in ["data_folder", "subfolder", "date"])
-            sequences[key] = load_frames(sequence_obslog, key)
-        end
-    end
-    return sequences
-end

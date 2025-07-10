@@ -50,7 +50,7 @@ for i in 30:40
         @info "Final center" final_cx=final_cx final_cy=final_cy
 
         plot(p1,p2, layout=(1,2), size=(1200,600))
-        savefig("reductions/crop_test/crop_test_$(i)_$(j).png")
+        savefig("pipeline/crop_test/crop_test_$(i)_$(j).png")
 
     end
 end

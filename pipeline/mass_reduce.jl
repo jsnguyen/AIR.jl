@@ -1,3 +1,4 @@
+using OrderedCollections
 using Glob
 using AstroImages
 using ImageFiltering
@@ -9,26 +10,24 @@ using AIR
 
     median_size = 5 # median pixel replacement size
 
-    obslog_folder = "reductions/obslogs"
+    @info "Using $(Threads.nthreads()) threads for reduction"
+
+    obslog_folder = "pipeline/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
         @info "Loading obslog from" obslog_filename
-        obslog = load_obslog(obslog_filename)
-        
-        darks_filename = joinpath(obslog["data_folder"], "darks.fits")
-        flats_filename = joinpath(obslog["data_folder"], "flats.fits")
-        masks_filename = joinpath(obslog["data_folder"], "master_mask.fits")
 
-        master_darks = load_master(darks_filename)
-        master_flats = load_master(flats_filename)
-        masks = load_masks(masks_filename)
-
-        sci_frames = load_frames(obslog, "sci")
+        obslog = Obslog(obslog_filename)
+        master_darks = obslog.master_darks
+        master_flats = obslog.master_flats
+        masks = obslog.masks
+        sci = obslog.sci
 
         # add cosmic ray image cleaning here at some point?
         # first try didn't work properly...
 
-        reduced_frames = AstroImage[]
-        for sf in sci_frames
+        reduced_frames = Vector{AstroImage}(undef, length(sci))
+        Threads.@threads for i in eachindex(sci)
+            sf = sci[i]
 
             matched_flat = find_closest_flat(sf, master_flats)
             matched_dark = find_closest_dark(sf, master_darks)
@@ -74,11 +73,11 @@ using AIR
 
             reduced ./= reduced["COADDS"] # divide by coadds
             reduced .*= get_NIRC2_gain(reduced["DATE-OBS"]) # apply the gain
-
-            push!(reduced_frames, reduced)
-
+            
             reduced_filename = "reduced_$(lpad(reduced["FRAMENO"], 4, '0')).fits"
             reduced["RED-FN"] = reduced_filename
+
+            reduced_frames[i] = reduced
 
         end
 
@@ -91,15 +90,15 @@ using AIR
         for rf in reduced_frames
             reduced_filepath = joinpath(reduced_folder, rf["RED-FN"])
             push!(reduced_filepaths, rf["RED-FN"])
-            println("Saving reduced frame to $(reduced_filepath)")
+            @info "Saving reduced frame to $(reduced_filepath)"
 
             save(reduced_filepath, rf)
         end
 
         reduced_obslog = OrderedDict{String, Any}("data_folder" => obslog["data_folder"],
-                                                  "subfolder" => "reduced",
                                                   "date" => obslog["date"],
-                                                  "reduced" => reduced_filepaths)
+                                                  "reduced" => OrderedDict{String, Any}(
+                                                  "reduced_sci" => reduced_filepaths))
 
         reduced_obslog_filepath = joinpath((obslog_folder, "$(obslog["date"])_reduced.toml"))
 
@@ -114,7 +113,7 @@ using AIR
         if isfile(rejects_obslog_filepath)
             @warn "Existing rejects file found! Skipping!"
         else
-            rejects_obslog = OrderedDict{String, Any}("rejects" => String[])
+            rejects_obslog = OrderedDict{String, Any}("reduced" => OrderedDict{String, Any}("rejects" => String[]))
             @info "Writing to $(rejects_obslog_filepath)"
             toml_str = pretty_print_toml(rejects_obslog)
             open(rejects_obslog_filepath, "w") do io

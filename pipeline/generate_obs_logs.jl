@@ -1,3 +1,4 @@
+using Printf
 using OrderedCollections
 using Glob
 using FITSIO
@@ -8,33 +9,63 @@ using AstroImages
 
 using AIR
 
-function contains_target(data_folder, subfolder, coords; fk4_coords=nothing, n_cutoff=3, arcsec_threshold=100)
+function make_table(date, data_folder, subfolder)
 
     filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
-    ra, dec = coords # assumed to be ICRS
+    fields = ["FILENAME", "OBJECT", "TARGNAME", "RA", "DEC", "CAMNAME", "DATE-OBS", "UTC", "ITIME", "COADDS", "FILTER", "CAMNAME", "GRSNAME", "SLITNAME", "NAXIS1", "NAXIS2"]
+    field_lengths = [18, 16, 16, 12, 12, 8, 10, 11, 8, 8, 20, 8, 8, 10, 6, 6]
 
+    table_filename = joinpath(data_folder, "$(date)_frames_table.txt")
+    @info "Writing frames table to" table_filename
 
-    # if no FK4 coords, just use ICRS coordinates
-    if fk4_coords !== nothing
-        fk4_ra, fk4_dec = fk4_coords
-    else
-        fk4_ra, fk4_dec = ra, dec
+    open(table_filename, "w") do io
+        # print header
+        for (i, (l,f)) in enumerate(zip(field_lengths,fields))
+            @printf(io, "%-*s ", l, f)
+            if i != length(fields)
+                @printf(io, "| ")
+            end
+        end
+        @printf(io, "\n")
+
+        # print info for each frame
+        for fn in filenames
+            frame = load(fn)
+            for (i, (l,f)) in enumerate(zip(field_lengths,fields))
+                if !haskey(frame, f)
+                    @printf(io, "%-*s ", l, "")
+                    continue
+                else
+                    @printf(io, "%-*s ", l, frame[f])
+                end
+
+                if i != length(fields)
+                    @printf(io, "| ")
+                end
+
+            end
+            @printf(io, "\n")
+        end
+
     end
+end
 
+function contains_target(data_folder, subfolder, coords; fk4_coords=nothing, n_cutoff=3, arcsec_threshold=100)
 
+    filenames = glob("*.fits", joinpath(data_folder, subfolder))
 
     target = String[]
 
     for fn in filenames
         frame = load(fn)
 
-        conditions = [frame["CAMNAME"] == "narrow",
-                      frame["GRSNAME"] == "clear",
-                      !(haskey(frame, "SLITNAME") && (occursin("vortex", frame["SLITNAME"]) || occursin("corona", frame["SLITNAME"])))]
+        conditions = Dict{String,Any}("NARROWCAM" => frame["CAMNAME"] == "narrow",
+                                      "CLEAR GRS" => frame["GRSNAME"] == "clear")
+                                      #"OPEN SLIT" => !(haskey(frame, "SLITNAME") && (occursin("vortex", frame["SLITNAME"]) || occursin("corona", frame["SLITNAME"]))))
 
-        if !all(conditions)
-            @warn "Skipping file $(fn) due to conditions: $(conditions)"
+        if !all(values(conditions))
+            @warn "Skipping file $(fn) due to conditions" conditions=conditions
             continue
         end
 
@@ -43,22 +74,21 @@ function contains_target(data_folder, subfolder, coords; fk4_coords=nothing, n_c
             continue
         end
 
-        if frame["RADECSYS"] == "FK4"
+        # need this here or they will get overwritten on subsequent loops
+        # for some reason, the coordinate system can vary within an epoch
+        ra, dec = coords
 
-            if fk4_coords === nothing
+        if frame["RADECSYS"] == "FK4"
+            @info "Using FK4 coordinates for $(fn)"
+            if fk4_coords !== nothing
+                ra, dec = fk4_coords
+            else
                 @warn "Files are in FK4 but no Fk4 coordinates provided!"
             end
-
-            @info "Using FK4 coordinates for $(fn)"
-            ra = fk4_ra
-            dec = fk4_dec
-        else
-            ra = ra
-            dec = dec
         end
 
         radec_distance = deg2arcsec(small_angle_distance((ra, dec), (frame["RA"], frame["DEC"])))
-        push!(distances, radec_distance)
+        @info "Coordinates" object=frame["OBJECT"] target=frame["TARGNAME"] ra=ra dec=dec frame_ra=frame["RA"] frame_dec=frame["DEC"] radec_distance=radec_distance radecsys=frame["RADECSYS"]
 
         if radec_distance < arcsec_threshold && lowercase(frame["SHRNAME"]) == "open"
 
@@ -68,7 +98,7 @@ function contains_target(data_folder, subfolder, coords; fk4_coords=nothing, n_c
     end
 
     if length(target) <= n_cutoff
-        println("Not enough science frames found, skipping obslog generation for $(data_folder)")
+        @warn "Not enough science frames found (only found $(length(target))), skipping obslog generation for $(data_folder)"
         return false
     end
 
@@ -129,32 +159,36 @@ function generate_obs_logs(date, data_folder, subfolder, output_folder; lampoff_
     end
 
     if flats_lampoff == []
-        println("No lamp-off flats found, assuming regular flats...")
+        @info "No lamp-off flats found, assuming regular flats..."
         flats = flats_lampon
         flats_lampon = []
     end
 
     obslog = OrderedDict{String, Any}("data_folder" => data_folder,
-                                      "subfolder" => subfolder,
                                       "date" => date,
-                                      "sci" => sci,
-                                      "flats" => flats,
-                                      "flats_sky" => flats_sky,
-                                      "flats_lampon" => flats_lampon,
-                                      "flats_lampoff" => flats_lampoff,
-                                      "darks" => darks)
+                                      subfolder => OrderedDict{String, Any}(
+                                        "sci" => sci,
+                                        "flats" => flats,
+                                        "flats_sky" => flats_sky,
+                                        "flats_lampon" => flats_lampon,
+                                        "flats_lampoff" => flats_lampoff,
+                                        "darks" => darks
+                                      ))
 
-    println("Found $(length(sci)) science frames")
-    println("Found $(length(flats)) flats")
-    println("Found $(length(flats_lampon)) lamp-on flats")
-    println("Found $(length(flats_lampoff)) lamp-off flats")
-    println("Found $(length(darks)) dark frames")
+
+    @info "Found $(length(sci)) science frames"
+    @info "Found $(length(flats)) flats"
+    @info "Found $(length(flats_lampon)) lamp-on flats"
+    @info "Found $(length(flats_lampoff)) lamp-off flats"
+    @info "Found $(length(darks)) dark frames"
 
     toml_str = pretty_print_toml(obslog)
 
     open(obslog_filepath, "w") do io
         write(io, toml_str)
     end
+
+    return obslog
 
 end
 
@@ -175,13 +209,20 @@ end
     subfolder = "raw"
 
     for date in readdir(observations_folder)
-        output_folder = "/Users/jsn/landing/projects/AIR.jl/reductions/obslogs"
+        if !isdir(joinpath(observations_folder, date))
+            continue
+        end
+        output_folder = "/Users/jsn/landing/projects/AIR.jl/pipeline/obslogs"
         data_folder = joinpath(observations_folder, date)
+
+        make_table(date, data_folder, subfolder)
+
         if contains_target(data_folder, subfolder, (ra, dec); fk4_coords=(fk4_ra, fk4_dec))
             if isdir(data_folder)
                 generate_obs_logs(date, data_folder, subfolder, output_folder)
             end
         end
+
     end
 
 end
