@@ -3,123 +3,155 @@ using Glob
 using AstroImages
 using ImageFiltering
 using Statistics
+using ProgressMeter
 
 using AIR
 
-@autolog begin
+```
+median replace using local pixels
+if no good pixels, replace with fail_val
+```
+function local_median_replace_bad_pixels!(data, mask, median_size; fail_val=0.0)
+    bad_indices = findall(mask)
+    half_size = median_size ÷ 2
+    height, width = size(data)
 
-    median_size = 5 # median pixel replacement size
+    @inbounds for idx in bad_indices
+        i, j = Tuple(idx)
+
+        i_start = max(1, i - half_size)
+        i_end = min(height, i + half_size)
+        j_start = max(1, j - half_size)
+        j_end = min(width, j + half_size)
+
+        window = @view data[i_start:i_end, j_start:j_end]
+        window_mask = @view mask[i_start:i_end, j_start:j_end]
+
+        # Fast median of good pixels
+        good_pixels = window[.!window_mask]
+        if length(good_pixels) > 0
+            data[i, j] = median(good_pixels)
+        else
+            data[i, j] = fail_val
+        end
+    end
+
+end
+
+# median_size is the median pixel replacement size, even numbers work best
+function reduce_frame(frame, master_flats, master_darks, masks; median_size = 6, gain=1.0)
+
+    reduced = copy(frame)
+
+    matched_flat = find_closest_flat(reduced, master_flats)
+    matched_dark = find_closest_dark(reduced, master_darks)
+
+    if matched_dark === nothing
+        #@warn "No matching dark found for $(reduced["FILENAME"])" reduced["ITIME"] reduced["COADDS"]
+        reduced["DARKSUB"] = false
+        matched_dark = zeros(size(reduced))
+    else
+        reduced["DARKSUB"] = true
+    end
+
+    if matched_flat === nothing
+        #@warn "No matching flat found for $(reduced["FILENAME"])" reduced["FILTER"]
+        reduced["FLATDIV"] = false
+        matched_flat = ones(size(reduced))
+    else
+        reduced["FLATDIV"] = true
+    end
+
+    reduced = (reduced .- matched_dark) ./ matched_flat
+
+    reduced ./= reduced["COADDS"] # divide by coadds
+    reduced .*= gain
+
+    # start with the bad pixel mask as our mask
+    mask = copy(NIRC2_bad_pixel_mask)
+
+    if size(mask) != size(reduced)
+        mask, _, _ = crop(NIRC2_bad_pixel_mask, size(reduced))
+    end
+
+    if haskey(masks, size(reduced))
+        mask = mask .| masks[size(reduced)] # also combine the extra mask if it exists
+    end
+
+    nan_mask = isnan.(reduced.data) .| isinf.(reduced.data) # create a mask for NaN and Inf values
+    mask = mask .| nan_mask # combine the bad pixel mask with the NaN/Inf mask
+
+    local_median_replace_bad_pixels!(reduced.data, mask, median_size)
+
+    reduced_filename = "reduced_$(lpad(reduced["FRAMENO"], 4, '0')).fits"
+    reduced["RED-FN"] = reduced_filename
+
+    return reduced
+
+end
+
+@autolog begin
 
     @info "Using $(Threads.nthreads()) threads for reduction"
 
+    allowed = ["2002-06-16", "2002-08-02", "2002-08-21"]
+
     obslog_folder = "pipeline/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
+
+        if !any(date -> occursin(date, obslog_filename), allowed)
+            @warn "Skipping file: $obslog_filename (not in allowed dates)"
+            continue
+        end
+
         @info "Loading obslog from" obslog_filename
-
         obslog = Obslog(obslog_filename)
-        master_darks = obslog.master_darks
-        master_flats = obslog.master_flats
-        masks = obslog.masks
-        sci = obslog.sci
 
-        # add cosmic ray image cleaning here at some point?
-        # first try didn't work properly...
+        p = Progress(length(obslog.sci))
+        update!(p, 0)
+        counter = Threads.Atomic{Int}(0)
+        lock = Threads.SpinLock()
 
-        reduced_frames = Vector{AstroImage}(undef, length(sci))
-        Threads.@threads for i in eachindex(sci)
-            sf = sci[i]
+        gain = get_NIRC2_gain(obslog.date) # gain is the same for all dates
 
-            matched_flat = find_closest_flat(sf, master_flats)
-            matched_dark = find_closest_dark(sf, master_darks)
-            
-            if matched_dark === nothing
-                @warn "No matching dark found for $(sf["FILENAME"])" sf["ITIME"] sf["COADDS"]
-                sf["DARKSUB"] = false
-                matched_dark = zeros(size(sf))
-            else
-                sf["DARKSUB"] = true
-            end
+        # no LACosmic, probably more trouble than it's worth
 
-            if matched_flat === nothing
-                @warn "No matching flat found for $(sf["FILENAME"])" sf["FILTER"]
-                sf["FLATDIV"] = false
-                matched_flat = ones(size(sf))
-            else
-                sf["FLATDIV"] = true
-            end
+        reduced_frames = Vector{AstroImage}(undef, length(obslog.sci))
+        Threads.@threads for i in eachindex(obslog.sci)
 
-            # start with the bad pixel mask as our mask
-            mask = copy(NIRC2_bad_pixel_mask)
+            frame = obslog.sci[i]
 
-            if size(mask) != size(sf)
-                mask, _, _ = crop(NIRC2_bad_pixel_mask, size(sf))
-            end
+            reduced = reduce_frame(frame, obslog.master_flats, obslog.master_darks, obslog.masks; gain=gain)
 
-            if haskey(masks, size(sf))
-                mask = mask .| masks[size(sf)] # also combine the extra mask if it exists
-            end
-
-            nan_mask = isnan.(sf.data) .| isinf.(sf.data) # create a mask for NaN and Inf values
-            mask = mask .| nan_mask # combine the bad pixel mask with the NaN/Inf mask
-
-            # make the median frame to do pixel replacement
-            # not super efficient, but it works
-            median_sf = mapwindow(median, sf.data, (median_size, median_size))
-
-            # finally, assign the median values to the masked pixels
-            sf.data[mask] .= median_sf[mask]
-
-            reduced = AstroImage((sf .- matched_dark) ./ matched_flat, sf.header)
-
-            reduced ./= reduced["COADDS"] # divide by coadds
-            reduced .*= get_NIRC2_gain(reduced["DATE-OBS"]) # apply the gain
-            
-            reduced_filename = "reduced_$(lpad(reduced["FRAMENO"], 4, '0')).fits"
-            reduced["RED-FN"] = reduced_filename
+            readnoise = get_NIRC2_readnoise(reduced["SAMPMODE"])
+            reduced["RDNOISE"] = readnoise
 
             reduced_frames[i] = reduced
 
+            Threads.atomic_add!(counter, 1)
+            Threads.lock(lock)
+            update!(p, counter[])
+            Threads.unlock(lock)
         end
 
         @info "Reduced $(length(reduced_frames)) science frames"
 
-        reduced_folder = joinpath(obslog["data_folder"], "reduced")
-        make_and_clear(reduced_folder, "reduced_*.fits")
+        make_and_clear(obslog.paths.reduced_folder, "reduced_*.fits")
 
         reduced_filepaths = String[]
         for rf in reduced_frames
-            reduced_filepath = joinpath(reduced_folder, rf["RED-FN"])
+            reduced_filepath = joinpath(obslog.paths.reduced_folder, rf["RED-FN"])
             push!(reduced_filepaths, rf["RED-FN"])
             @info "Saving reduced frame to $(reduced_filepath)"
-
             save(reduced_filepath, rf)
         end
 
-        reduced_obslog = OrderedDict{String, Any}("data_folder" => obslog["data_folder"],
-                                                  "date" => obslog["date"],
+        reduced_obslog = OrderedDict{String, Any}("data_folder" => obslog.paths.data_folder,
+                                                  "date" => obslog.date,
                                                   "reduced" => OrderedDict{String, Any}(
                                                   "reduced_sci" => reduced_filepaths))
 
-        reduced_obslog_filepath = joinpath((obslog_folder, "$(obslog["date"])_reduced.toml"))
-
-        @info "Writing to $(reduced_obslog_filepath)"
-        toml_str = pretty_print_toml(reduced_obslog)
-        open(reduced_obslog_filepath, "w") do io
-            write(io, toml_str)
-        end
-
-        rejects_obslog_filepath = joinpath(obslog_folder, "$(obslog["date"])_rejects.toml")
-
-        if isfile(rejects_obslog_filepath)
-            @warn "Existing rejects file found! Skipping!"
-        else
-            rejects_obslog = OrderedDict{String, Any}("reduced" => OrderedDict{String, Any}("rejects" => String[]))
-            @info "Writing to $(rejects_obslog_filepath)"
-            toml_str = pretty_print_toml(rejects_obslog)
-            open(rejects_obslog_filepath, "w") do io
-                write(io, toml_str)
-            end
-        end
+        write_toml(obslog.paths.reduced_file, reduced_obslog)
 
     end
 

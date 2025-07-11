@@ -16,7 +16,7 @@ function make_darks(darks_frames; darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "C
     return collect(values(master_darks)), collect(values(master_darks_masks))
 end
 
-function make_darks_obslog(obslog; darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"])
+function make_master_darks_obslog(obslog; darks_keylist=["NAXIS1", "NAXIS2", "ITIME", "COADDS"])
     darks_frames = load_frames(obslog, "darks")
     master_darks, master_darks_masks = make_darks(darks_frames; darks_keylist=darks_keylist)
     return master_darks, master_darks_masks
@@ -109,7 +109,7 @@ function make_lamp_flats(lampon_frames, lampoff_frames, master_darks; flats_keyl
     return master_flat_lamp, master_flat_lamp_masks
 end
 
-function make_flats_obslog(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"], flattype="REGULAR")
+function make_master_flats_obslog(obslog, master_darks, flats_keylist = ["NAXIS1", "NAXIS2", "ITIME", "COADDS", "FILTER"], flattype="REGULAR")
 
     #
     # regular flat frames
@@ -176,30 +176,25 @@ end
 
     obslog_folder = "pipeline/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
+
         @info "Loading obslog from" obslog_filename
-        obslog = load_obslog(obslog_filename)
+        obslog = Obslog(obslog_filename)
         
         @info "Making darks..."
-        master_darks, master_darks_masks = make_darks_obslog(obslog)
+        master_darks, master_darks_masks = make_master_darks_obslog(obslog)
+        @info "Writing master darks to" obslog.paths.darks_file
+        save(obslog.paths.darks_file, master_darks...)
 
         @info "Making flats..."
-        master_flats, master_flats_masks = make_flats_obslog(obslog, master_darks)
+        master_flats, master_flats_masks = make_master_flats_obslog(obslog, master_darks)
+        @info "Writing master flats to" obslog.paths.flats_file
+        save(obslog.paths.flats_file, master_flats...)
 
-        darks_filename = joinpath(obslog["data_folder"], "darks.fits")
-        flats_filename = joinpath(obslog["data_folder"], "flats.fits")
-
-        @info "Writing masters to" darks_filename flats_filename
-
-        save(darks_filename, master_darks...)
-        save(flats_filename, master_flats...)
-
-        master_mask_filename = joinpath(obslog["data_folder"], "master_mask.fits")
-
-        @info "Writing masters masks to" master_mask_filename
-
+        @info "Making master masks..."
         master_masks = make_master_masks(master_darks_masks, master_flats_masks)
+        @info "Writing masters masks to" obslog.paths.masks_file
+        save(obslog.paths.masks_file, master_masks...)
 
-        save(master_mask_filename, master_masks...)
     end
 
 end

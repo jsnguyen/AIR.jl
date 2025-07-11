@@ -278,7 +278,7 @@ Rotate an image about its center by the specified angle in degrees.
 function rotate_image_center(img::AbstractArray, angle_degrees; fillval=0.0)
     angle_rad = deg2rad(angle_degrees)
     
-    rows, cols = size(img.data)
+    rows, cols = size(img)
     center = rows/2 + 0.5, cols/2 + 0.5
     
     # Create rotation about specified center point
@@ -287,4 +287,71 @@ function rotate_image_center(img::AbstractArray, angle_degrees; fillval=0.0)
     rotated_data = warp(img, rotation, axes(img), fill=fillval)
     
     return rotated_data
+end
+
+function make_frametable(frames, table_filename; fields=String[])
+
+    fields_dict = OrderedDict{String,Int}("FILENAME" => 18,
+                                          "OBJECT" => 16,
+                                          "TARGNAME" => 16,
+                                          "RA" => 12,
+                                          "DEC" => 12,
+                                          "CAMNAME" => 8,
+                                          "DATE-OBS" => 10,
+                                          "UTC" => 11,
+                                          "ITIME" => 8,
+                                          "COADDS" => 8,
+                                          "FILTER" => 20,
+                                          "GRSNAME" => 8,
+                                          "SLITNAME" => 10,
+                                          "NAXIS1" => 6,
+                                          "NAXIS2" => 6)
+
+    if fields == String[]
+        fields = keys(fields_dict)
+    end
+
+    printed_fields = OrderedDict{String,Int}()
+    for field in fields
+        if field in keys(fields_dict)
+            printed_fields[field] = fields_dict[field]
+        end
+    end
+
+    @info "Writing frames table to" table_filename
+
+    open(table_filename, "w") do io
+        # print header
+        for (i, (f,l)) in enumerate(pairs(printed_fields))
+            @printf(io, "%-*s ", l, f)
+            if i != length(fields)
+                @printf(io, "| ")
+            end
+        end
+        @printf(io, "\n")
+
+        # print info for each frame
+        for frame in frames
+            for (i, (f,l)) in enumerate(pairs(printed_fields))
+                if !haskey(frame, f)
+                    @printf(io, "%-*s ", l, "")
+                else
+                    @printf(io, "%-*s ", l, frame[f])
+                end
+
+                if i != length(fields)
+                    @printf(io, "| ")
+                end
+
+            end
+            @printf(io, "\n")
+        end
+
+    end
+end
+
+function argquantile(img, quant)
+    val = quantile(vec(img), quant)
+	_, inds = findmin(abs.(img .- val))
+    return inds.I
 end

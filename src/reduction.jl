@@ -90,7 +90,7 @@ function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
             end
         end
     else
-        @warn "No matching flat found for $(frame["FILENAME"])"
+        #@warn "No matching flat found for $(frame["FILENAME"])"
     end
 
     return matched_flat
@@ -114,7 +114,7 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
 
             # for the 2nd and 3rd case, rescale by coadds
             if (i==2) || (i==3)
-                @warn "Rescaling dark frame by COADDS $(matched_dark["COADDS"]) -> $(frame["COADDS"])"
+                #@warn "Rescaling dark frame by COADDS $(matched_dark["COADDS"]) -> $(frame["COADDS"])"
                 matched_dark = matched_dark ./ matched_dark["COADDS"] .* frame["COADDS"]
             end
 
@@ -135,7 +135,7 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
     end
 
     if matched_dark === nothing
-        @warn "No matching dark found"
+        #@warn "No matching dark found"
     end
 
     return matched_dark

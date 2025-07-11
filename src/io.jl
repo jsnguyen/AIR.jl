@@ -1,10 +1,57 @@
-struct Obslog
+struct ObslogPaths
+    obslog_folder::String
+    data_folder::String
 
-    obslog::OrderedDict{String, Any}
     raw_folder::String
     reduced_folder::String
     plots_folder::String
     sequences_folder::String
+
+    obslog_file::String
+    reduced_file::String
+    rejects_file::String
+    sequences_file::String
+    table_file::String
+
+    darks_file::String
+    flats_file::String
+    masks_file::String
+
+    function ObslogPaths(obslog_dict::Dict{String, Any}, date)
+        obslog_folder = dirname(obslog_dict["obslog_file"])
+        data_folder = obslog_dict["data_folder"]
+        delete!(obslog_dict, "data_folder")
+
+        raw_folder = joinpath(data_folder, "raw")
+        reduced_folder = joinpath(data_folder, "reduced")
+        plots_folder = joinpath(data_folder, "plots")
+        sequences_folder = joinpath(data_folder, "sequences")
+
+        obslog_file = obslog_dict["obslog_file"]
+        reduced_file = joinpath(obslog_folder, "$(date)_reduced.toml")
+        rejects_file = joinpath(obslog_folder, "$(date)_rejects.toml")
+        sequences_file = joinpath(obslog_folder, "$(date)_sequences.toml")
+        table_file = joinpath(obslog_folder, "$(date)_reduced_frames_table.txt")
+
+        darks_file = joinpath(data_folder, "darks.fits")
+        flats_file = joinpath(data_folder, "flats.fits")
+        masks_file = joinpath(data_folder, "master_mask.fits")
+
+        new(obslog_folder, data_folder,
+            raw_folder, reduced_folder, plots_folder, sequences_folder,
+            obslog_file, reduced_file, rejects_file, sequences_file, table_file,
+            darks_file, flats_file, masks_file)
+    end
+
+end
+
+struct Obslog
+
+    obslog::OrderedDict{String, Any}
+    paths::ObslogPaths
+
+    date::String
+
     master_darks::Any
     master_flats::Any
     masks::Any
@@ -12,28 +59,39 @@ struct Obslog
     reduced_sci::Vector{AstroImage}
     sequences::Dict{String, Any}
 
-    function Obslog(obslog_filename::String; rejects::Vector{String}=String[])
-        obslog_dict = load_obslog(obslog_filename)
+    function Obslog(obslog_file::String)
+        obslog_dict = load_obslog(obslog_file)
+
+        # shortcuts
+        date = obslog_dict["date"]
+        delete!(obslog_dict, "date")
+
+        paths = ObslogPaths(obslog_dict, date)
+
+        rejects = String[]
+        if isfile(paths.rejects_file)
+            @info "Rejects file found: $(paths.rejects_file)"
+            rejects = load_rejects(paths.rejects_file)
+        end
         
-        darks_filename = joinpath(obslog_dict["data_folder"], "darks.fits")
-        flats_filename = joinpath(obslog_dict["data_folder"], "flats.fits")
-        masks_filename = joinpath(obslog_dict["data_folder"], "master_mask.fits")
-
-        master_darks = load_master(darks_filename)
-        master_flats = load_master(flats_filename)
-        masks = load_masks(masks_filename)
-
-        raw_folder = joinpath(obslog_dict["data_folder"], "raw")
-        reduced_folder = joinpath(obslog_dict["data_folder"], "reduced")
-        plots_folder = joinpath(obslog_dict["data_folder"], "plots")
-        sequences_folder = joinpath(obslog_dict["data_folder"], "sequences")
+        master_darks = load_master(paths.darks_file)
+        master_flats = load_master(paths.flats_file)
+        masks = load_masks(paths.masks_file)
 
         sci = load_frames(obslog_dict, "sci"; rejects=rejects)
         reduced_sci = load_frames(obslog_dict, "reduced_sci"; rejects=rejects)
 
-        sequences = load_sequences(obslog_dict, rejects=rejects)
+        protected_keys = ["obslog_file"]
+        sequences = Dict{String, Any}()
+        if occursin("sequences", obslog_file)
+            for key in keys(obslog_dict)
+                if !(key in protected_keys)
+                    sequences[key] = load_frames(obslog_dict, key; rejects=rejects)
+                end
+            end
+        end
 
-        new(obslog_dict, raw_folder, reduced_folder, plots_folder, sequences_folder, master_darks, master_flats, masks, sci, reduced_sci, sequences)
+        new(obslog_dict, paths, date, master_darks, master_flats, masks, sci, reduced_sci, sequences)
     end
 
 end
@@ -48,10 +106,11 @@ Base.iterate(obs::Obslog) = iterate(obs.obslog)
 Base.iterate(obs::Obslog, state) = iterate(obs.obslog, state)
 Base.get(obs::Obslog, key, default) = get(obs.obslog, key, default)
 
-function load_obslog(obslog_filename::String)
-    obslog = open(obslog_filename, "r") do file
+function load_obslog(obslog_file::String)
+    obslog = open(obslog_file, "r") do file
         TOML.parse(file)
     end
+    obslog["obslog_file"] = obslog_file
 
     # unfold the nested dictionary to make things easier to access
     # the "raw" data is stored in a subfolder
@@ -131,9 +190,17 @@ function load_sequences(sequence_obslog; rejects::Vector{String}=String[])
     return sequences
 end
 
-function load_rejects(rejects_path)
-    rejects = open(rejects_path, "r") do file
+function load_rejects(rejects_file)
+    rejects = open(rejects_file, "r") do file
         TOML.parse(file)["rejects"]
     end
     return rejects
+end
+
+function write_toml(filename, data_dict)
+    @info "Writing sequences to" filename
+    toml_str = pretty_print_toml(data_dict)
+    open(filename, "w") do io
+        write(io, toml_str)
+    end
 end
