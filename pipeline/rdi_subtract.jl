@@ -44,7 +44,6 @@ function rdi_subtract_epoch_1()
         frame ./= frame["ITIME"]
 
         @info "Performing PSF subtraction with sub-pixel shift, scale, and offset optimization..."
-        #residual, optimal_params = subtract_psf_with_shift(frame, hbc650_median; mask_radius=inner_mask_radius)
         residual, optimal_params = optimal_subtract_target(frame, hbc650_median, initial_guess, search_radius; inner_mask_radius=inner_mask_radius, outer_mask_radius=outer_mask_radius)
 
         angle, _ = calculate_north_angle(residual.header)
@@ -64,7 +63,7 @@ function rdi_subtract_epoch_1()
 
     # Save results
     save(joinpath(sequence_obslog.paths.sequences_folder, "as209_median.fits"), as209_median)
-    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_psf_subtraction_derotated.fits"), derotated...)
+    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cube.fits"), derotated...)
 end
 
 function rdi_subtract_epoch_2()
@@ -110,7 +109,7 @@ function rdi_subtract_epoch_2()
 
     subtracted_median_frame = median(framelist_to_cube(derotated), dims=3) |> x -> dropdims(x, dims=3)
     save(joinpath(sequence_obslog.paths.sequences_folder, "as209_median.fits"), subtracted_median_frame)
-    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_psf_subtraction_derotated.fits"), derotated...)
+    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cube.fits"), derotated...)
 end
 
 function rdi_subtract_epoch_3()
@@ -145,7 +144,6 @@ function rdi_subtract_epoch_3()
         frame ./= frame["ITIME"]
 
         @info "Performing PSF subtraction with sub-pixel shift, scale, and offset optimization..."
-        #residual, optimal_params = subtract_psf_with_shift(frame, tyc2307_median; mask_radius=inner_mask_radius)
         residual, optimal_params = optimal_subtract_target(frame, tyc2307_median, initial_guess, search_radius; inner_mask_radius=inner_mask_radius, outer_mask_radius=outer_mask_radius)
 
         angle, _ = calculate_north_angle(residual.header)
@@ -165,7 +163,7 @@ function rdi_subtract_epoch_3()
 
     # Save results
     save(joinpath(sequence_obslog.paths.sequences_folder, "as209_median.fits"), as209_median)
-    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_psf_subtraction_derotated.fits"), derotated...)
+    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cube.fits"), derotated...)
 end
 
 function rdi_subtract_epoch_4()
@@ -178,8 +176,11 @@ function rdi_subtract_epoch_4()
     as209 = load(joinpath(sequence_obslog.paths.sequences_folder, "as209_2_aligned_frames.fits"), :)
     t222007 = load(joinpath(sequence_obslog.paths.sequences_folder, "t222007_4_aligned_frames.fits"), :)
 
+    t222007_derotated = AstroImage[]
     for frame in t222007
         frame ./= frame["ITIME"]  # Normalize by integration time
+        frame = rotate_image_center(frame, -frame["ROTPPOSN"])
+        push!(t222007_derotated, copy(frame))
     end
     cube = framelist_to_cube(t222007)
     t222007_median = median(cube, dims=3) |> x -> dropdims(x, dims=3)
@@ -193,18 +194,22 @@ function rdi_subtract_epoch_4()
     # Perform PSF subtraction with sub-pixel shifting, scaling, and offset
     derotated = AstroImage[]
     initial_guess = [0.0, 0.0, 1.0, 0.0]
+    as209_derotated = AstroImage[]
     for frame in as209
         frame ./= frame["ITIME"]
+        frame = rotate_image_center(frame, -frame["ROTPPOSN"])
+        as209_derotated = push!(as209_derotated, copy(frame))
 
         @info "Performing PSF subtraction with sub-pixel shift, scale, and offset optimization..."
-        #residual, optimal_params = subtract_psf_with_shift(frame, t222007_median; mask_radius=inner_mask_radius)
         residual, optimal_params = optimal_subtract_target(frame, t222007_median, initial_guess, search_radius; inner_mask_radius=inner_mask_radius, outer_mask_radius=outer_mask_radius)
+
+        residual = rotate_image_center(residual, residual["ROTPPOSN"])
 
         angle, _ = calculate_north_angle(residual.header)
         derot = rotate_image_center(residual, -angle+residual["PARANG"])
         derot[inner_circle_mask] .= NaN
         derot[.!outer_circle_mask] .= NaN
-        push!(derotated, AstroImage(derot,frame.header))
+        push!(derotated, derot)
 
         initial_guess = optimal_params  # Use the last optimal parameters as the initial guess for the next frame
         @info "Optimal Params" optimal_params=optimal_params
@@ -217,14 +222,17 @@ function rdi_subtract_epoch_4()
 
     # Save results
     save(joinpath(sequence_obslog.paths.sequences_folder, "as209_median.fits"), as209_median)
-    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_psf_subtraction_derotated.fits"), derotated...)
+    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cube.fits"), derotated...)
+
+    save(joinpath(sequence_obslog.paths.sequences_folder, "as209_derotated.fits"), as209_derotated...)
+    save(joinpath(sequence_obslog.paths.sequences_folder, "t222007_derotated.fits"), t222007_derotated...)
 end
 
 @autolog begin
 
-    #rdi_subtract_epoch_1()
-    #rdi_subtract_epoch_2()
-    #rdi_subtract_epoch_3()
+    rdi_subtract_epoch_1()
+    rdi_subtract_epoch_2()
+    rdi_subtract_epoch_3()
     rdi_subtract_epoch_4()
 
 end

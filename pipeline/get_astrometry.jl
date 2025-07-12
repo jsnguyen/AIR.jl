@@ -4,18 +4,37 @@ using AstroImages
 using AIR
 import AIR.crop 
 
-function get_astrometry(as209, as209_cube, template_psf, coarse_location; boxsize=30, template_psf_size=20, distance_pixel_cutoff=5.0)
+# obtained from error propagation formula
+function error_cartesian_to_polar(x, y, center_x, center_y, sigma_x, sigma_y)
+    dx = x - center_x
+    dy = y - center_y
 
-    cropped, cr_y , cr_x = crop(as209.data, (boxsize, boxsize), center=coarse_location)
-    cropped_psf,_ ,_ = crop(template_psf.data, (template_psf_size, template_psf_size))
+    sep = sqrt(dy^2 + dx^2)
+    ang = atan(dx,dy)
 
-    initial_guess = [20.0, boxsize/2 + 0.5, boxsize/2 + 0.5, 3.0, 3.0, -2]
-    fit_params = fit_2d_gaussian(cropped, initial_guess)
+    err_sep = sqrt((x/sep)^2 * sigma_x + (y/sep)^2 * sigma_y)
+    err_ang = sqrt((y/sep^2)^2 * sigma_x + (x/sep^2)^2 * sigma_y)
+
+    return sep, ang, err_sep, err_ang
+
+end
+
+function get_astrometry(as209, as209_cube, template_psf, coarse_location; initial_guess=nothing, boxsize=30, distance_pixel_cutoff=5.0)
+
+    if initial_guess === nothing
+        initial_guess = [30.0, boxsize/2 + 0.5, boxsize/2 + 0.5, 3.0, 3.0, -2]
+    end
+
+    median_cropped, cr_y , cr_x = crop(as209.data, (boxsize, boxsize), center=coarse_location)
+    cropped_psf,_ ,_ = crop(template_psf.data, (boxsize, boxsize))
+
+    lower_bounds = [0.0, 0.0, 0.0, 0.0, 0.0, -10.0]
+    upper_bounds = [100.0, boxsize+1, boxsize+1, 10.0, 10.0, 10.0]
 
     jitter_xs, jitter_ys = [], []
     for frame in as209_cube
         cropped, cr_y , cr_x = crop(frame.data, (boxsize, boxsize), center=coarse_location)
-        fit_params = fit_2d_gaussian(cropped, initial_guess)
+        fit_params = fit_2d_gaussian(cropped, initial_guess; lower_bounds=lower_bounds, upper_bounds=upper_bounds, bounded_fit=true)
 
         crop_center_y = size(cropped, 1) / 2 + 0.5
         crop_center_x = size(cropped, 2) / 2 + 0.5
@@ -31,6 +50,8 @@ function get_astrometry(as209, as209_cube, template_psf, coarse_location; boxsiz
 
     std_xs = std(jitter_xs)
     std_ys = std(jitter_ys)
+
+    fit_params = fit_2d_gaussian(median_cropped, initial_guess; lower_bounds=lower_bounds, upper_bounds=upper_bounds, bounded_fit=true)
 
     @info "Jitter STD:"
     @info @sprintf("  x [px] -> %8.6f", std_xs)
@@ -77,7 +98,7 @@ end
     epochs = ["2002-06-16", "2002-08-02", "2002-08-21", "2005-07-27"]
     coarse_locations = [
         (130, 159),  # 2002-06-16
-        (82, 113),   # 2002-08-02
+        (80, 112),   # 2002-08-02
         (48, 79),    # 2002-08-21
         (52, 90)     # 2005-07-27
     ]
@@ -97,10 +118,10 @@ end
             template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "as209_template_psf.fits"))
         end
 
-        cropped_target, cropped_psf = get_astrometry(as209, as209_cube, template_psf, coarse_location)
+        cropped_target, cropped_psf, sep, pa = get_astrometry(as209, as209_cube, template_psf, coarse_location)
 
-        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped.fits"), cropped_target) 
-        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped_psf.fits"), cropped_psf) 
+        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped_target.fits"), cropped_target) 
+        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped_template_psf.fits"), cropped_psf) 
 
     end
 

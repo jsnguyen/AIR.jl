@@ -17,14 +17,14 @@ function optimal_subtract_target(target, reference, initial_guess, search_radius
     function loss(params)
         residual = align_and_subtract(params)
 
-        inner_circle_mask = BitMatrix(ones(size(residual)))
+        inner_circle_mask = trues(size(residual))
         if inner_mask_radius !== nothing && inner_mask_radius > 0.0
             if inner_mask_radius > 0.0
                 inner_circle_mask = .~make_circle_mask(size(residual), inner_mask_radius)
             end
         end
 
-        outer_circle_mask = BitMatrix(ones(size(residual)))
+        outer_circle_mask = trues(size(residual))
         if outer_mask_radius !== nothing
             if 0.0 < inner_mask_radius < outer_mask_radius
                 outer_circle_mask = make_circle_mask(size(residual), outer_mask_radius)
@@ -50,7 +50,7 @@ function optimal_subtract_target(target, reference, initial_guess, search_radius
 
 end
 
-function fit_generic_kernel(data, initial_guess, kernel)
+function fit_generic_kernel(data, initial_guess, kernel; lower_bounds=nothing, upper_bounds=nothing, bounded_fit=false)
 
     function loss(params)
         rows, cols = size(data)
@@ -61,12 +61,20 @@ function fit_generic_kernel(data, initial_guess, kernel)
         return sum(residual .^ 2)
     end
 
-    res = optimize(loss, initial_guess, LBFGS())
+    if bounded_fit
+        if lower_bounds === nothing || upper_bounds === nothing
+            error("For bounded fit, both lower_bounds and upper_bounds must be provided")
+        end
+        res = optimize(loss, lower_bounds, upper_bounds, initial_guess, Fminbox(LBFGS()))
+    else
+        res = optimize(loss, initial_guess, LBFGS())
+    end
+
     return Optim.minimizer(res)
 
 end
 
-function fit_2d_gaussian(data, initial_guess; fixed_sigma=nothing, fixed_offset=nothing)
+function fit_2d_gaussian(data, initial_guess; fixed_sigma=nothing, fixed_offset=nothing, kwargs...)
 
     kernel = if fixed_sigma !== nothing && fixed_offset !== nothing
         if length(initial_guess) != 3
@@ -87,12 +95,20 @@ function fit_2d_gaussian(data, initial_guess; fixed_sigma=nothing, fixed_offset=
         gaussian_2d
     end
 
-    return fit_generic_kernel(data, initial_guess, kernel)
+    return fit_generic_kernel(data, initial_guess, kernel; kwargs...)
 
 end
 
 function gaussian_2d(x, y, A, x0, y0, σx, σy, offset)
     return A * exp(-((x - x0)^2 / (2 * σx^2) + (y - y0)^2 / (2 * σy^2))) + offset
+end
+
+function gaussian_2d_rotated(x, y, amp, x0, y0, σx, σy, θ, offset)
+    cos_θ = cos(θ)
+    sin_θ = sin(θ)
+    x_rot = cos_θ * (x - x0) + sin_θ * (y - y0)
+    y_rot = -sin_θ * (x - x0) + cos_θ * (y - y0)
+    return amp * exp(-((x_rot)^2 / (2 * σx^2) + (y_rot)^2 / (2 * σy^2))) + offset
 end
 
 function fit_and_crop(data, crop_size, initial_guess; fixed_sigma=nothing)

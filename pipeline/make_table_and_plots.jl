@@ -14,7 +14,7 @@ using AIR
         @info "Loading obslog from" obslog_filename
         obslog = Obslog(obslog_filename)
 
-        fields = ["FILENAME", "OBJECT", "TARGNAME", "RA", "DEC", "CAMNAME", "DATE-OBS", "UTC", "ITIME", "COADDS", "FILTER", "NAXIS1", "NAXIS2"]
+        fields = ["FILENAME", "OBJECT", "TARGNAME", "RA", "DEC", "CAMNAME", "DATE-OBS", "UTC", "ITIME", "COADDS", "SLITNAME", "FILTER", "NAXIS1", "NAXIS2"]
         make_frametable(obslog.reduced_sci, obslog.paths.table_file; fields=fields)
 
         #

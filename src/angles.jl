@@ -144,3 +144,36 @@ function par_angle(HA, dec, lat)
     return rad2deg(parallang) # [deg]
 end
 
+"""
+    rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
+
+Rotate an image about its center by the specified angle in degrees.
+"""
+function rotate_image_center(img::AbstractArray, angle_degrees; fillval=0.0)
+    angle_rad = deg2rad(angle_degrees)
+    
+    rows, cols = size(img)
+    center = rows/2 + 0.5, cols/2 + 0.5
+    
+    # Create rotation about specified center point
+    rotation = recenter(RotMatrix(angle_rad), center)
+    
+    rotated_data = warp(img, rotation, axes(img), fill=fillval)
+    
+    return rotated_data
+end
+
+function rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
+    angle_rad = deg2rad(angle_degrees)
+
+    
+    rows, cols = size(img)
+    center = rows/2 + 0.5, cols/2 + 0.5
+    
+    # Create rotation about specified center point
+    rotation = recenter(RotMatrix(angle_rad), center)
+    
+    rotated_data = warp(img.data, rotation, axes(img.data), fill=fillval)
+    
+    return AstroImage(rotated_data, img.header)
+end

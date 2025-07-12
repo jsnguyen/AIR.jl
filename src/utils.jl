@@ -270,25 +270,6 @@ function measure_background(frame::AstroImage; mask_radius=200)
     return median(background_pixels)
 end
 
-"""
-    rotate_image_center(img::AstroImage, angle_degrees; fillval=0.0)
-
-Rotate an image about its center by the specified angle in degrees.
-"""
-function rotate_image_center(img::AbstractArray, angle_degrees; fillval=0.0)
-    angle_rad = deg2rad(angle_degrees)
-    
-    rows, cols = size(img)
-    center = rows/2 + 0.5, cols/2 + 0.5
-    
-    # Create rotation about specified center point
-    rotation = recenter(RotMatrix(angle_rad), center)
-    
-    rotated_data = warp(img, rotation, axes(img), fill=fillval)
-    
-    return rotated_data
-end
-
 function make_frametable(frames, table_filename; fields=String[])
 
     fields_dict = OrderedDict{String,Int}("FILENAME" => 18,

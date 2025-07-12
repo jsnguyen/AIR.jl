@@ -172,7 +172,7 @@ function register_epoch_4()
         target = chop(key, tail=2)
         template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "$(target)_template_psf_cored.fits"))
 
-        sizes = (360,350,340)
+        sizes = (370,360,350)
         fine_aligned_frames = register_frames(frames, template_psf; sizes=sizes)
         save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
 
