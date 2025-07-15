@@ -1,5 +1,7 @@
 const _mask_dir = joinpath(@__DIR__, "..", "masks")
 
+const NIRC2_plate_scale = 0.009942
+
 const NIRC2_bad_pixel_mask = begin
     maskfile = joinpath(_mask_dir, "bad_pixel_mask_20230101.fits")
     img = load(maskfile)            # from AstroImages or FITSIO

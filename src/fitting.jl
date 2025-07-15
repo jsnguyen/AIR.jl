@@ -1,5 +1,5 @@
 
-function optimal_subtract_target(target, reference, initial_guess, search_radius; scale_bounds=(0.1, 10), offset_bounds=(-1000.0, 1000.0), inner_mask_radius=nothing, outer_mask_radius=nothing)
+function optimal_subtract_target(target, reference, initial_guess, search_radius; scale_bounds=(0.1, 10), offset_bounds=(-100.0, 100.0), inner_mask_radius=nothing, outer_mask_radius=nothing)
 
     function align_and_subtract(params)
         dy, dx, scale, offset = Float64.(params)
@@ -42,7 +42,7 @@ function optimal_subtract_target(target, reference, initial_guess, search_radius
     lower_bounds = [-search_radius, -search_radius, scale_bounds[1], offset_bounds[1]]
     upper_bounds = [search_radius, search_radius, scale_bounds[2], offset_bounds[2]]
 
-    res = optimize(loss, lower_bounds, upper_bounds, initial_guess, Fminbox(LBFGS());)
+    res = optimize(loss, lower_bounds, upper_bounds, initial_guess, Fminbox(NelderMead()))
     params = Optim.minimizer(res)
     residual = align_and_subtract(params)
 
@@ -128,7 +128,7 @@ function fit_and_crop(data, crop_size, initial_guess; fixed_sigma=nothing)
 
 end
 
-function cross_correlation_center(image, template, sigma)
+function cross_correlation_center(image::AbstractArray, template::AbstractArray, sigma)
     cc = imfilter(image, centered(template))
 
     _, max_idx = findmax(image)
@@ -143,7 +143,7 @@ function cross_correlation_center(image, template, sigma)
 
 end
 
-function cross_correlate_align(image, template, sigma)
+function cross_correlate_align(image::AbstractArray, template::AbstractArray, sigma)
 
     cy, cx = cross_correlation_center(image, template, sigma)
 
@@ -154,4 +154,11 @@ function cross_correlate_align(image, template, sigma)
 
     return warped
 
+end
+
+function cross_correlate_align(image::AstroImage, template::AstroImage, sigma)
+
+    # warp messes up the AstroImage type i think
+    warped = cross_correlate_align(image.data, template.data, sigma)
+    return AstroImage(warped, image.header)
 end

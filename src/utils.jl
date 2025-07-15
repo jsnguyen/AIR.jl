@@ -5,7 +5,7 @@ deg2arcsec(deg::Real) = deg * 3600.0
 arcsec2deg(arcsec::Real) = arcsec / 3600.0
 pixel_center_coordinates = x ->  x + 0.5
 cartesian_coordinates = x -> x - 0.5
-remove_nan! = x -> @. x[~isfinite(x)] = 0
+remove_nan! = x -> @. x[~isfinite(x)] = 0.0
 
 function all_header_keywords_match(ha, hb, kws)
     for kw in kws
@@ -51,6 +51,7 @@ end
 function match_keys(frames, keylist)
     matched_dict = Dict{Any, Vector{AstroImage}}()
     for f in frames
+        # create a new key based on the values of the keys in the keylist
         key = [f[k] for k in keylist]
         if !(key in keys(matched_dict))
             matched_dict[key] = AstroImage[]
@@ -74,24 +75,44 @@ function make_and_clear(folder_path, glob_pattern)
 end
 
 function make_circle_mask(img_size::Tuple{Int, Int}, radius::Int; center::Union{Tuple{Int, Int}, Nothing}=nothing)
-    # image size
-    h, w = img_size
 
-    # If center is not provided, calculate it
+    sy, sx = img_size
+
     if center === nothing
-        center_y = h ÷ 2 + 1
-        center_x = w ÷ 2 + 1
+        center_y = sy / 2.0 + 0.5
+        center_x = sx / 2.0 + 0.5
     else
         center_y, center_x = center
     end
 
-    # Create the mask
-    mask = BitMatrix(undef, h, w)
-    for i in 1:h
-        for j in 1:w
-            # Distance from the center
+    mask = BitMatrix(undef, sy, sx)
+    for i in 1:sy
+        for j in 1:sx
             dist = sqrt((i - center_y)^2 + (j - center_x)^2)
             mask[i, j] = dist <= radius
+        end
+    end
+
+    return mask
+end
+
+function make_annulus_mask(img_size::Tuple{Int, Int}, inner_radius::Int, outer_radius::Int; center::Union{Tuple{Int, Int}, Nothing}=nothing)
+    # image size
+    sy, sx = img_size
+
+    # If center is not provided, calculate it
+    if center === nothing
+        center_y = sy / 2.0 + 0.5
+        center_x = sx / 2.0 + 0.5
+    else
+        center_y, center_x = center
+    end
+
+    mask = BitMatrix(undef, sy, sx)
+    for i in 1:sy
+        for j in 1:sx
+            dist = sqrt((i - center_y)^2 + (j - center_x)^2)
+            mask[i, j] = inner_radius <= dist <= outer_radius
         end
     end
 
@@ -129,7 +150,7 @@ function crop(img::AbstractArray, crop_size::Tuple{Int,Int}; center=nothing)
 
     if h==crop_h && w==crop_w
         @info "No cropping needed, input size equals output size!"
-        return img  # No cropping needed, return the original image
+        return img, 0.0, 0.0  # No cropping needed, return the original image
     end
 
     # both not even or both not odd
@@ -230,6 +251,11 @@ function subpixel_crop(img::AbstractArray, crop_size::Tuple{Int,Int}, center::Tu
     oy = start_row - 1 + ty + offset_y
     
     return warped_img[start_row:end_row, start_col:end_col], oy, ox
+end
+
+function subpixel_crop(img::AstroImage, crop_size::Tuple{Int,Int}, center::Tuple{Float64,Float64})
+    cropped, oy, ox = subpixel_crop(img.data, crop_size, center)
+    return AstroImage(cropped, img.header), oy, ox
 end
 
 

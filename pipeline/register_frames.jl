@@ -10,7 +10,7 @@ using CoordinateTransformations
 using AIR
 import AIR.crop 
 
-function register_frames(frames, template_psf; sizes=(530, 515, 500))
+function register_frames(frames, template_psf, rotator_mode; sizes=(530, 515, 500))
 
     coarse_size, intermediate_size, final_size = sizes
 
@@ -42,11 +42,16 @@ function register_frames(frames, template_psf; sizes=(530, 515, 500))
 
     @showprogress desc="Align" for (i,frame) in enumerate(cropped_frames)
 
+        # rotate the template PSF to match the frame's rotation
+        if rotator_mode == "position angle"
+            template_psf = rotate_image_center(template_psf, -(frame["PARANG"]-frame["ROTPOSN"]))
+            remove_nan!(template_psf)
+        end
+
         aligned = cross_correlate_align(frame.data, template_psf, n_sigma_ccr)
 
         aligned,_ ,_ =  crop(aligned, (intermediate_size, intermediate_size))
         @. aligned[~isfinite(aligned)] = 0
-        aligned = AstroImage(aligned, frame.header)
 
         push!(aligned_frames, aligned)
     end
@@ -58,7 +63,6 @@ function register_frames(frames, template_psf; sizes=(530, 515, 500))
 
         aligned,_ ,_ =  crop(aligned, (final_size, final_size))
         @. aligned[~isfinite(aligned)] = 0
-        aligned = AstroImage(aligned, frame.header)
 
         push!(fine_aligned_frames, aligned)
     end
@@ -67,123 +71,51 @@ function register_frames(frames, template_psf; sizes=(530, 515, 500))
 
 end
 
-function register_epoch_1()
+function register_epochs()
+
+    dates = ["2002-06-16", "2002-08-02", "2002-08-21", "2005-07-27"]
+
+    picked_sequences  = [["as209_2", "as209_3", "as209_4", "hbc630_2", "hbc650_2", "hbc650_3"],
+                         ["as209_2"],
+                         ["as209_3", "as209_4", "tyc2307_2", "tyc2307_3"],
+                         ["as209_2", "t222007_4"]]
+
+    registering_sizes = ((530, 500, 400),
+                         (450, 430, 400),
+                         (420, 410, 400),
+                         (420, 410, 400))
 
     sequence_obslog_folder = "pipeline/obslogs"
-    sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-06-16_sequences.toml")
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
+    for (sizes,picked_sequence,date) in zip(registering_sizes, picked_sequences, dates)
+        sequence_obslog_path = joinpath(sequence_obslog_folder, "$(date)_sequences.toml")
+        @info "Loading sequence_obslog from" sequence_obslog_path
+        sequence_obslog = Obslog(sequence_obslog_path)
 
-    unsaturated_sequences = ["as209_1", "hbc650_1", "hbc630_1"]
-    for key in keys(sequence_obslog.sequences)
+        for key in keys(sequence_obslog.sequences)
 
-        if key in unsaturated_sequences
-            @info "Skipping saturated sequence $key"
-            continue
+            if !(key in picked_sequence)
+                @info "Skipping sequence $key"
+                continue
+            end
+            @info "Processing sequence" key
+
+            if date=="2002-08-02"
+                template_psf = load("data/2002-06-16/sequences/as209_template_psf_cored.fits")
+            else
+                target = chop(key, tail=2)
+                template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "$(target)_template_psf_cored.fits"))
+            end
+
+            frames = load_frames(sequence_obslog, key) 
+            fine_aligned_frames = register_frames(frames, template_psf, frames[1]["ROTMODE"]; sizes=sizes)
+            save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
+
         end
-        @info "Processing sequence" key
-
-        frames = load_frames(sequence_obslog, key) 
-        target = chop(key, tail=2)
-        template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "$(target)_template_psf_cored.fits"))
-
-        sizes = (530, 515, 500)
-        fine_aligned_frames = register_frames(frames, template_psf; sizes=sizes)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
 
     end
 
 end
-
-function register_epoch_2()
-
-    sequence_obslog_folder = "pipeline/obslogs"
-    sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-08-02_sequences.toml")
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    picked_sequence = ["as209_2"]
-    for key in keys(sequence_obslog.sequences)
-
-        if !(key in picked_sequence)
-            @info "Skipping sequence $key"
-            continue
-        end
-
-        @info "Processing sequence" key
-
-        frames = load_frames(sequence_obslog, key) 
-        #template_psf = load(joinpath(sequence_obslog.paths.reduced_folder, "reduced_0078.fits"))
-        template_psf = load("data/2002-06-16/sequences/as209_template_psf_cored.fits")
-
-        sizes = (450, 430, 410)
-        fine_aligned_frames = register_frames(frames, template_psf; sizes=sizes)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
-
-    end
-
-end
-
-function register_epoch_3()
-
-    sequence_obslog_folder = "pipeline/obslogs"
-    sequence_obslog_path = joinpath(sequence_obslog_folder, "2002-08-21_sequences.toml")
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    picked_sequence = ["as209_3", "as209_4", "tyc2307_2", "tyc2307_3"]
-    for key in keys(sequence_obslog.sequences)
-
-        if !(key in picked_sequence)
-            @info "Skipping sequence $key"
-            continue
-        end
-        @info "Processing sequence" key
-
-        frames = load_frames(sequence_obslog, key) 
-        target = chop(key, tail=2)
-        template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "$(target)_template_psf_cored.fits"))
-
-        sizes = (360,350,340)
-        fine_aligned_frames = register_frames(frames, template_psf; sizes=sizes)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
-
-    end
-
-end
-
-function register_epoch_4()
-
-    sequence_obslog_folder = "pipeline/obslogs"
-    sequence_obslog_path = joinpath(sequence_obslog_folder, "2005-07-27_sequences.toml")
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    picked_sequence = ["as209_2", "t222007_4"]
-    for key in keys(sequence_obslog.sequences)
-
-        if !(key in picked_sequence)
-            @info "Skipping sequence $key"
-            continue
-        end
-        @info "Processing sequence" key
-
-        frames = load_frames(sequence_obslog, key) 
-        target = chop(key, tail=2)
-        template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "$(target)_template_psf_cored.fits"))
-
-        sizes = (370,360,350)
-        fine_aligned_frames = register_frames(frames, template_psf; sizes=sizes)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "$(key)_aligned_frames.fits"), fine_aligned_frames...)
-
-    end
-
-end
-
 
 @autolog begin
-    #register_epoch_1()
-    #register_epoch_2()
-    #register_epoch_3()
-    register_epoch_4()
+    register_epochs()
 end

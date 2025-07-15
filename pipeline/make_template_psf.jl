@@ -14,7 +14,7 @@ function make_template_psf_from_sequences(sequences, sequences_folder; coarse_si
             continue
         end
 
-        cropped_frames, centered_frames = make_template_psf(sequences[key], coarse_size, fine_size; kwargs...)
+        cropped_frames, centered_frames = make_template_psf(sequences[key], coarse_size, fine_size, sequences[key][1]["ROTMODE"]; kwargs...)
 
         # make final template
         if length(centered_frames) > 0
@@ -35,7 +35,7 @@ function make_template_psf_from_sequences(sequences, sequences_folder; coarse_si
 
 end
 
-function make_template_psf(frames, coarse_size, fine_size; fixed_sigma=2.0, quantile_threshold=0.9999)
+function make_template_psf(frames, coarse_size, fine_size, rotator_mode; fixed_sigma=2.0, quantile_threshold=0.9999)
 
     # subtract off mean background
     mean_background = 0.0
@@ -64,13 +64,20 @@ function make_template_psf(frames, coarse_size, fine_size; fixed_sigma=2.0, quan
 
     for (i, frame) in enumerate(cropped_frames)
 
+        # put frame into a "PSF-aligned frame" frame
+        # vertical angle mode is already aligned
+        if rotator_mode == "position angle"
+            frame = rotate_image_center(frame, (frame["PARANG"]-frame["ROTPOSN"]))
+            remove_nan!(frame)
+        end
+
         max_idx = argquantile(frame.data, quantile_threshold)
         initial_cy, initial_cx = Float64.(Tuple(max_idx))
         initial_guess = [5000.0, initial_cx, initial_cy, 10.0]
 
         cropped_frame, final_cx, final_cy, _, _ = fit_and_crop(frame.data, (fine_size, fine_size), initial_guess; fixed_sigma=fixed_sigma)
 
-        push!(centered_frames, AstroImage(cropped_frame, frame.header))
+        push!(centered_frames, cropped_frame)
         @info "Frame $i" gaussian_center=(final_cy, final_cx)
     end
 
@@ -80,52 +87,25 @@ function make_template_psf(frames, coarse_size, fine_size; fixed_sigma=2.0, quan
 
 end
 
-function make_template_psf_epoch_1()
+function make_template_psf_epochs()
 
-    sequence_obslog_path = "pipeline/obslogs/2002-06-16_sequences.toml"
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    unsaturated_sequences = ["as209_1", "hbc650_1", "hbc630_1"]
-
+    dates = ["2002-06-16", "2002-08-21", "2005-07-27"]
     coarse_size = 300
     fine_size = 256
 
-    make_template_psf_from_sequences(sequence_obslog.sequences, sequence_obslog.paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, unsaturated_sequences=unsaturated_sequences)
+    unsaturated_sequences_epochs = [["as209_1", "hbc650_1", "hbc630_1"],
+                                    ["as209_2", "tyc2307_1"],
+                                    ["as209_1", "t222007_1"]]
 
-end
-
-function make_template_psf_epoch_3()
-
-    sequence_obslog_path = "pipeline/obslogs/2002-08-21_sequences.toml"
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    unsaturated_sequences = ["as209_2", "tyc2307_1"]
-
-    coarse_size = 300
-    fine_size = 256
-
-    make_template_psf_from_sequences(sequence_obslog.sequences, sequence_obslog.paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, unsaturated_sequences=unsaturated_sequences)
-end
-
-function make_template_psf_epoch_4()
-
-    sequence_obslog_path = "pipeline/obslogs/2005-07-27_sequences.toml"
-    @info "Loading sequence_obslog from" sequence_obslog_path
-    sequence_obslog = Obslog(sequence_obslog_path)
-
-    unsaturated_sequences = ["as209_1", "t222007_1"]
-
-    coarse_size = 300
-    fine_size = 256
-
-    make_template_psf_from_sequences(sequence_obslog.sequences, sequence_obslog.paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, unsaturated_sequences=unsaturated_sequences)
+    for (unsaturated_sequences, date) in zip(unsaturated_sequences_epochs, dates)
+        sequence_obslog_path = "pipeline/obslogs/$(date)_sequences.toml"
+        @info "Loading sequence_obslog from" sequence_obslog_path
+        sequence_obslog = Obslog(sequence_obslog_path)
+        make_template_psf_from_sequences(sequence_obslog.sequences, sequence_obslog.paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, unsaturated_sequences=unsaturated_sequences)
+    end
 end
 
 
 @autolog begin
-    #make_template_psf_epoch_1()
-    #make_template_psf_epoch_3()
-    make_template_psf_epoch_4()
+    make_template_psf_epochs()
 end

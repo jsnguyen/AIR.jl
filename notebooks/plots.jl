@@ -99,6 +99,63 @@ for date in dates
 	savefig(p,"$(date)_gauss.png")
 end
 
+# ╔═╡ 132d2878-4a1b-4af3-b267-fa7754226d9e
+begin
+	ref = load("/Users/jsn/landing/projects/AIR.jl/data/2005-07-27/sequences/t222007_4_aligned_frames.fits", 1)
+	targ = load("/Users/jsn/landing/projects/AIR.jl/data/2005-07-27/sequences/as209_2_aligned_frames.fits", 1)
+	remove_nan!(ref)
+
+	println(ref["ROTMODE"])
+	println(ref["ROTPPOSN"])
+	println(ref["ROTPOSN"])
+	println(ref["PARANG"])
+	println(ref["OBRT"])
+	println()
+	println(targ["ROTMODE"])
+	println(targ["ROTPPOSN"])
+	println(targ["ROTPOSN"])
+	println(targ["PARANG"])
+	println(targ["OBRT"])
+
+	p1 = heatmap(ref; legend = :none, aspect_ratio=:equal, clims=(0,4000), size=(600,600), axis=([], false), xlabel="", ylabel="", title="ref")
+	hline!([size(ref,2)/2], color=:black)
+	vline!([size(ref,1)/2], color=:black)
+
+	derotated_ref = rotate_image_center(ref, (ref["PARANG"]-ref["ROTPOSN"])-(targ["PARANG"]-targ["ROTPOSN"]))
+	remove_nan!(derotated_ref)
+
+	derotated_targ = rotate_image_center(targ,0 )
+	remove_nan!(derotated_targ)
+
+	p2 = heatmap(derotated_ref; legend = :none, aspect_ratio=:equal, clims=(0,4000), size=(600,600), axis=([], false), xlabel="", ylabel="", title="derot ref")
+	hline!([size(derotated_ref,2)/2], color=:black)
+	vline!([size(derotated_ref,1)/2], color=:black)
+
+	
+	p3 = heatmap(derotated_targ; legend = :none, aspect_ratio=:equal, clims=(0,5000), size=(600,600), axis=([], false), xlabel="", ylabel="", title="derot targ")
+	hline!([size(targ,2)/2], color=:black)
+	vline!([size(targ,1)/2], color=:black)
+
+	p4 = heatmap(0.7*derotated_ref-derotated_targ; legend = :none, aspect_ratio=:equal, clims=(-1000,1000), size=(600,600), axis=([], false), xlabel="", ylabel="", title="sub")
+
+	hline!([size(targ,2)/2], color=:black)
+	vline!([size(targ,1)/2], color=:black)
+
+	plot([p1, p2, p3, p4]...; size=(600, 600), layout=(2,2))
+end
+
+# ╔═╡ 0876aa4e-ff33-498a-b112-63b9bbbc6a91
+ref.header
+
+# ╔═╡ b605a4f3-8818-4f4e-9080-ec0ea1713fd3
+targ.header
+
+# ╔═╡ 71f24449-b2a9-45e4-a4e5-5795d7233b97
+ref["ROTPPOSN"]
+
+# ╔═╡ e3babfaf-d532-42a2-85c2-d38d9366a2b4
+parse(Float64,ref["OBRT"])
+
 # ╔═╡ Cell order:
 # ╠═591b7532-d974-42b3-bda6-69c2e1b042ae
 # ╠═ebbdc3b6-a3ae-49b4-a398-a5547686c67d
@@ -110,3 +167,8 @@ end
 # ╠═8ae98f0c-14c6-4970-bac4-5f57ef8fe27b
 # ╠═3f81bab7-5f80-42b2-9e4b-24583559f5f6
 # ╠═6096a7e2-e509-4e6a-8b02-2f5ec43e6f1f
+# ╠═132d2878-4a1b-4af3-b267-fa7754226d9e
+# ╠═0876aa4e-ff33-498a-b112-63b9bbbc6a91
+# ╠═b605a4f3-8818-4f4e-9080-ec0ea1713fd3
+# ╠═71f24449-b2a9-45e4-a4e5-5795d7233b97
+# ╠═e3babfaf-d532-42a2-85c2-d38d9366a2b4

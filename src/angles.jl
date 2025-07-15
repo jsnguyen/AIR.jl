@@ -14,8 +14,6 @@ function calculate_north_angle(headers)
     rotator_position = headers["ROTPOSN"] # Degrees
     instrument_angle = headers["INSTANGL"] # Degrees
 
-    rotator_mode = "vertical angle"
-
     pa_deg = 0.0
     if rotator_mode == "vertical angle"
         if haskey(headers, "PARANTEL")
@@ -24,8 +22,12 @@ function calculate_north_angle(headers)
             parang = headers["PARANG"]
         end
         pa_deg = parang + rotator_position - instrument_angle + zp_offset
+
+    # fixed bug here where position angle mode was not being handled correctly
+    # don't need all the fancy smear stuff if we're in position angle mode
     elseif rotator_mode == "position angle"
         pa_deg = rotator_position - instrument_angle + zp_offset
+        return pa_deg, [pa_deg]
     elseif rotator_mode == "stationary"
         # TODO: Handle case where the instrument rotator is stationary.
         return NaN, [NaN]
