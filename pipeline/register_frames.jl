@@ -48,10 +48,10 @@ function register_frames(frames, template_psf, rotator_mode; sizes=(530, 515, 50
             remove_nan!(template_psf)
         end
 
-        aligned = cross_correlate_align(frame.data, template_psf, n_sigma_ccr)
+        aligned = cross_correlate_align(frame, template_psf, n_sigma_ccr)
 
         aligned,_ ,_ =  crop(aligned, (intermediate_size, intermediate_size))
-        @. aligned[~isfinite(aligned)] = 0
+        remove_nan!(aligned)
 
         push!(aligned_frames, aligned)
     end
@@ -59,10 +59,10 @@ function register_frames(frames, template_psf, rotator_mode; sizes=(530, 515, 50
     fine_aligned_frames = AstroImage[]
     @showprogress desc="Fine align" for frame in aligned_frames
 
-        aligned = cross_correlate_align(frame.data, aligned_frames[1], n_sigma_ccr)
+        aligned = cross_correlate_align(frame, aligned_frames[1], n_sigma_ccr)
 
         aligned,_ ,_ =  crop(aligned, (final_size, final_size))
-        @. aligned[~isfinite(aligned)] = 0
+        remove_nan!(aligned)
 
         push!(fine_aligned_frames, aligned)
     end

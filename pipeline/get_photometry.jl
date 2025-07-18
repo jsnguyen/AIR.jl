@@ -10,10 +10,10 @@ import AIR.crop
 function extract_psf(as209_northup_cropped_cube, template_psf)
 
     # template PSF should be normalized and have zero background
-    template_psf /= maximum(template_psf.data)
+    template_psf /= maximum(template_psf)
 
     initial_guess = [0.0, 0.0, 30.0, 0.0]
-    search_radius = 3
+    search_radius = 3.0
 
     residuals = AstroImage[]
     extracted_psfs = AstroImage[]
@@ -23,7 +23,7 @@ function extract_psf(as209_northup_cropped_cube, template_psf)
         derotated_template_psf = rotate_image_center(template_psf, -(frame["PARANG"]-frame["ROTPOSN"]))
         derotated_template_psf, _, _ = crop(derotated_template_psf, size(as209_northup_cropped_cube[1]))
 
-        residual, optimal_params = optimal_subtract_target(frame.data, derotated_template_psf.data, initial_guess, search_radius; scale_bounds=(1e-3, 1e3), offset_bounds=(-1000.0, 1000.0))
+        residual, optimal_params = optimal_subtract_target(frame, derotated_template_psf, initial_guess, search_radius; scale_bounds=(1e-3, 1e3), offset_bounds=(-1000.0, 1000.0))
 
         @info "Optimal Params" optimal_params=optimal_params
 
@@ -109,9 +109,24 @@ end
         save(joinpath(sequence_obslog.paths.sequences_folder, "as209_rescaled_template_psfs.fits"), rescaled_template_psfs...)
         save(joinpath(sequence_obslog.paths.sequences_folder, "as209_northup_residuals.fits"), residuals...)
 
+
+        lambda = 0.0
+        bandpass = 0.0
+        if occursin("Kp", rescaled_template_psfs[1]["FILTER"])
+            lambda = 2.124e-6  # Kp filter central wavelength in meters
+            bandpass = 0.351e-6  # Kp filter bandwidth in meters
+        end
+
         photometry["epoch_$(date)"] = OrderedDict(
             "flux" => mean_flux,
-            "err_flux" => err_flux
+            "flux_units" => "W/m^2",
+            "err_flux" => err_flux,
+            "err_flux_units" => "W/m^2",
+            "avg_wl" => lambda,
+            "avg_wl_units" => "m",
+            "bandpass" => bandpass,
+            "bandpass_units" => "m",
+            "filter" => rescaled_template_psfs[1]["FILTER"]
         )
 
     end

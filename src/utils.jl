@@ -357,7 +357,7 @@ function make_frametable(frames, table_filename; fields=String[])
     end
 end
 
-function argquantile(img, quant)
+function argquantile(img::AbstractArray, quant::Float64)
     val = quantile(vec(img), quant)
 	_, inds = findmin(abs.(img .- val))
     return inds.I

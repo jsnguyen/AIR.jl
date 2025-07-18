@@ -1,5 +1,5 @@
 
-function optimal_subtract_target(target, reference, initial_guess, search_radius; scale_bounds=(0.1, 10), offset_bounds=(-100.0, 100.0), inner_mask_radius=nothing, outer_mask_radius=nothing)
+function optimal_subtract_target(target::AbstractArray, reference::AbstractArray, initial_guess::Vector{Float64}, search_radius::Float64; scale_bounds=(0.1, 10), offset_bounds=(-100.0, 100.0), inner_mask_radius=nothing, outer_mask_radius=nothing)
 
     function align_and_subtract(params)
         dy, dx, scale, offset = Float64.(params)
@@ -48,6 +48,13 @@ function optimal_subtract_target(target, reference, initial_guess, search_radius
 
     return residual, params
 
+end
+
+function optimal_subtract_target(target::AstroImage, reference::AstroImage, initial_guess::Vector{Float64}, search_radius::Float64; scale_bounds=(0.1, 10), offset_bounds=(-100.0, 100.0), inner_mask_radius=nothing, outer_mask_radius=nothing)
+
+    residual, params = optimal_subtract_target(target.data, reference.data, initial_guess, search_radius; scale_bounds=scale_bounds, offset_bounds=offset_bounds, inner_mask_radius=inner_mask_radius, outer_mask_radius=outer_mask_radius)
+
+    return AstroImage(residual, target.header), params
 end
 
 function fit_generic_kernel(data, initial_guess, kernel; lower_bounds=nothing, upper_bounds=nothing, bounded_fit=false)

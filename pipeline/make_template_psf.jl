@@ -75,7 +75,7 @@ function make_template_psf(frames, coarse_size, fine_size, rotator_mode; fixed_s
         initial_cy, initial_cx = Float64.(Tuple(max_idx))
         initial_guess = [5000.0, initial_cx, initial_cy, 10.0]
 
-        cropped_frame, final_cx, final_cy, _, _ = fit_and_crop(frame.data, (fine_size, fine_size), initial_guess; fixed_sigma=fixed_sigma)
+        cropped_frame, final_cx, final_cy, _, _ = fit_and_crop(frame, (fine_size, fine_size), initial_guess; fixed_sigma=fixed_sigma)
 
         push!(centered_frames, cropped_frame)
         @info "Frame $i" gaussian_center=(final_cy, final_cx)

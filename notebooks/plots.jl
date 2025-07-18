@@ -101,8 +101,8 @@ end
 
 # ╔═╡ 132d2878-4a1b-4af3-b267-fa7754226d9e
 begin
-	ref = load("/Users/jsn/landing/projects/AIR.jl/data/2005-07-27/sequences/t222007_4_aligned_frames.fits", 1)
-	targ = load("/Users/jsn/landing/projects/AIR.jl/data/2005-07-27/sequences/as209_2_aligned_frames.fits", 1)
+	ref = load("/Users/jsn/landing/projects/AIR.jl/data/2002-08-02/sequences/as209_2_aligned_frames.fits", 2)
+	targ = load("/Users/jsn/landing/projects/AIR.jl/data/2002-08-02/sequences/as209_2_aligned_frames.fits", 6)
 	remove_nan!(ref)
 
 	println(ref["ROTMODE"])
@@ -121,10 +121,13 @@ begin
 	hline!([size(ref,2)/2], color=:black)
 	vline!([size(ref,1)/2], color=:black)
 
-	derotated_ref = rotate_image_center(ref, (ref["PARANG"]-ref["ROTPOSN"])-(targ["PARANG"]-targ["ROTPOSN"]))
+	derotated_ref = rotate_image_center(ref, (ref["PARANG"]-ref["ROTPOSN"]))
+	remove_nan!(derotated_ref)
+	derotated_ref = rotate_image_center(derotated_ref, -(targ["PARANG"]-targ["ROTPOSN"]))
 	remove_nan!(derotated_ref)
 
-	derotated_targ = rotate_image_center(targ,0 )
+
+	derotated_targ = rotate_image_center(targ,0)
 	remove_nan!(derotated_targ)
 
 	p2 = heatmap(derotated_ref; legend = :none, aspect_ratio=:equal, clims=(0,4000), size=(600,600), axis=([], false), xlabel="", ylabel="", title="derot ref")

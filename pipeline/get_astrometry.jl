@@ -14,8 +14,10 @@ function error_cartesian_to_polar(x, y, center_x, center_y, sigma_x, sigma_y)
     sep = sqrt(dy^2 + dx^2)
     ang = atan(dx,dy)
 
-    err_sep = sqrt((x/sep)^2 * sigma_x + (y/sep)^2 * sigma_y)
-    err_ang = sqrt((y/sep^2)^2 * sigma_x + (x/sep^2)^2 * sigma_y)
+    err_sep = sqrt((x/sep * sigma_x)^2 + (y/sep * sigma_y)^2)
+
+    # note the swap here in y and x
+    err_ang = sqrt((y/sep^2 * sigma_x)^2 + (x/sep^2 * sigma_y)^2)
 
     return sep, ang, err_sep, err_ang
 
@@ -55,16 +57,22 @@ function get_astrometry(as209_northup_median, as209_northup_cube, template_psf, 
         push!(jitter_ys, object_y)
     end
 
-    std_xs = std(jitter_xs)
-    std_ys = std(jitter_ys)
+    err_xs = std(jitter_xs)
+    err_ys = std(jitter_ys)
+
+    @info "Jitter STD:"
+    @info @sprintf("  x [px] -> %8.6f", err_xs)
+    @info @sprintf("  y [px] -> %8.6f", err_ys)
+
+    err_xs = err_xs*NIRC2_plate_scale * 1000
+    err_ys = err_ys*NIRC2_plate_scale * 1000
 
     #fit_params = fit_2d_gaussian(median_cropped, initial_guess; lower_bounds=lower_bounds, upper_bounds=upper_bounds, bounded_fit=true)
     #fit_params = fit_generic_kernel(median_cropped, initial_guess, gaussian_2d_rotated; lower_bounds=lower_bounds, upper_bounds=upper_bounds, bounded_fit=true)
     fit_params = fit_2d_gaussian(median_cropped, initial_guess; lower_bounds=lower_bounds, upper_bounds=upper_bounds, bounded_fit=true, fixed_sigma=fixed_sigma)
 
-    @info "Jitter STD:"
-    @info @sprintf("  x [px] -> %8.6f", std_xs)
-    @info @sprintf("  y [px] -> %8.6f", std_ys)
+    @info @sprintf("  x [mas] -> %8.6f", err_xs)
+    @info @sprintf("  y [mas] -> %8.6f", err_ys)
 
     @info "Fit Params:"
     @info @sprintf("  amp    [e-/s] -> %8.3f", fit_params[1])
@@ -81,7 +89,7 @@ function get_astrometry(as209_northup_median, as209_northup_cube, template_psf, 
     image_center_y = size(as209_northup_median, 1) / 2 + 0.5
     image_center_x = size(as209_northup_median, 2) / 2 + 0.5
 
-    sep, pa, err_sep, err_pa = error_cartesian_to_polar(object_x, object_y, image_center_x, image_center_y, std_xs, std_ys)
+    sep, pa, err_sep, err_pa = error_cartesian_to_polar(object_x, object_y, image_center_x, image_center_y, err_xs, err_ys)
 
     sep = sep * NIRC2_plate_scale  # Convert pixels to arcseconds
     err_sep = err_sep * NIRC2_plate_scale  # Convert pixels to arcseconds
@@ -91,6 +99,7 @@ function get_astrometry(as209_northup_median, as209_northup_cube, template_psf, 
     if pa < 0
         pa += 360.0
     end
+    err_pa = rad2deg(err_pa)
 
     @info "Object position:"
     @info @sprintf("  Abs Pos (y,x)    [px] -> %8.3f, %8.3f", object_y, object_x)
@@ -101,7 +110,7 @@ function get_astrometry(as209_northup_median, as209_northup_cube, template_psf, 
 
     cropped_target, oy, ox = subpixel_crop(as209_northup_median, (boxsize, boxsize), (object_y, object_x))
 
-    return cropped_target, cropped_psf, sep, pa, err_sep, err_pa, as209_northup_cropped_cube
+    return cropped_target, cropped_psf, sep, pa, err_sep, err_pa, err_xs, err_ys, as209_northup_cropped_cube
 
 end
 
@@ -137,18 +146,25 @@ end
             template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "as209_template_psf.fits"))
         end
 
-        cropped_target, cropped_psf, sep, pa, err_sep, err_pa, as209_northup_cropped_cube = get_astrometry(as209_northup_median, as209_northup_cube, template_psf, median_coarse_locations[i], frame_coarse_locations[i])
+        cropped_target, cropped_psf, sep, pa, err_sep, err_pa, err_xs, err_ys, as209_northup_cropped_cube = get_astrometry(as209_northup_median, as209_northup_cube, template_psf, median_coarse_locations[i], frame_coarse_locations[i])
 
         save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped_target.fits"), cropped_target) 
         save(joinpath(sequence_obslog.paths.sequences_folder, "as209_cropped_template_psf.fits"), cropped_psf) 
         save(joinpath(sequence_obslog.paths.sequences_folder, "as209_northup_cropped_cube.fits"), as209_northup_cropped_cube...) 
 
-        astrometry["epoch_$(date)"] = OrderedDict(
-            "date" => date,
-            "sep" => sep,
-            "pa" => pa,
-            "err_sep" => err_sep,
-            "err_pa" => err_pa
+        astrometry["epoch_$(date)"] = OrderedDict("date" => date,
+                                                  "sep" => sep,
+                                                  "sep_units" => "arcsec",
+                                                  "pa" => pa,
+                                                  "pa_units" => "degrees",
+                                                  "err_sep" => err_sep,
+                                                  "err_sep_units" => "arcsec",
+                                                  "err_pa" => err_pa,
+                                                  "err_pa_units" => "degrees",
+                                                  "err_xs" => err_xs,
+                                                  "err_xs_units" => "mas",
+                                                  "err_ys" => err_ys,
+                                                  "err_ys_units" => "mas"
         )
 
     end
