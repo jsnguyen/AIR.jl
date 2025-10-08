@@ -8,3 +8,4 @@ nirc2_data_raw
 *.txt
 .DS_Store
 *.png
+*.jls
