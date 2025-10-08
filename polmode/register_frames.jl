@@ -98,7 +98,7 @@ function register_epochs()
 
     date = "2025-10-07"
 
-    sequence_obslog_folder = "live_ingestion/obslogs"
+    sequence_obslog_folder = "polmode/obslogs"
     sequence_obslog_path = joinpath(sequence_obslog_folder, "$(date)_split_sequences.toml")
     @info "Loading sequence_obslog from" sequence_obslog_path
     sequence_obslog = Obslog(sequence_obslog_path)

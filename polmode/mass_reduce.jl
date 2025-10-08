@@ -96,7 +96,7 @@ end
 
     allowed = ["2025-10-07"]
 
-    obslog_folder = "live_ingestion/obslogs"
+    obslog_folder = "polmode/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
 
         if !any(date -> occursin(date, obslog_filename), allowed)

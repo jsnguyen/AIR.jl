@@ -85,7 +85,7 @@ function make_template_psf_epochs()
     coarse_size = 220
     fine_size = 120
 
-    sequence_obslog_path = "live_ingestion/obslogs/$(date)_split_sequences.toml"
+    sequence_obslog_path = "polmode/obslogs/$(date)_split_sequences.toml"
     @info "Loading sequence_obslog from" sequence_obslog_path
 
     sequence_obslog = Obslog(sequence_obslog_path)

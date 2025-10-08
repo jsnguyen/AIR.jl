@@ -148,7 +148,7 @@ function generate_obslogs_generic()
     date = "2025-10-08"
     observation_folder = "/Users/jsn/landing/projects/AIR.jl/data/polmode/"
 
-    output_folder = "/Users/jsn/landing/projects/AIR.jl/live_ingestion/obslogs"
+    output_folder = "/Users/jsn/landing/projects/AIR.jl/polmode/obslogs"
     mkpath(output_folder)
 
     data_folder = joinpath(observation_folder, date)

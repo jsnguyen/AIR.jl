@@ -52,7 +52,7 @@ end
 
 function generate_sequence_epoch()
 
-    reduced_obslog = Obslog("live_ingestion/obslogs/2025-10-07_reduced.toml")
+    reduced_obslog = Obslog("polmode/obslogs/2025-10-07_reduced.toml")
     @info "Loading reduced_obslog from" reduced_obslog.paths.obslog_file
 
     sequences = OrderedDict{String,Any}("data_folder" => reduced_obslog.paths.data_folder,

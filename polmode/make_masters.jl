@@ -174,7 +174,7 @@ end
 
 @autolog begin
 
-    obslog_folder = "live_ingestion/obslogs"
+    obslog_folder = "polmode/obslogs"
     for obslog_filename in Glob.glob("*_obslog.toml", obslog_folder)
 
         @info "Loading obslog from" obslog_filename

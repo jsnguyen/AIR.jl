@@ -8,7 +8,7 @@ using AIR
 
 @autolog begin
 
-    obslog_folder = "live_ingestion/obslogs"
+    obslog_folder = "polmode/obslogs"
     for obslog_filename in Glob.glob(joinpath(obslog_folder,"*_reduced.toml"))
 
         @info "Loading obslog from" obslog_filename
