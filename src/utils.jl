@@ -68,7 +68,6 @@ function make_and_clear(folder_path, glob_pattern)
         mkpath(folder_path)
     else
         for fn in Glob.glob(glob_pattern, folder_path)
-            @info "Removing" fn
             rm(fn)
         end
     end

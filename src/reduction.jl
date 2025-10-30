@@ -3,7 +3,7 @@ function make_masters(frames, keylist; n_sigma::Float64=6.0, median_size::Int64=
     frame_dict = match_keys(frames, keylist)
 
     for key in keys(frame_dict)
-        @printf "key -> %s, count -> %d\n " key length(frame_dict[key])
+        @info "key -> $key, count -> $(length(frame_dict[key]))"
     end
 
     master_frames = Dict{Any, AstroImage}()
@@ -64,10 +64,10 @@ function find_matching_master(frame, masters, keylist)
         ind = findfirst(matches)
         matched = masters[ind]
     else
-        return nothing
+        return nothing, nothing
     end
 
-    return matched
+    return ind, matched
 
 end
 
@@ -77,7 +77,7 @@ end
 Guarantees finding a flat frame that matches at least the FILTER. Frame should be cropped as well.
 """
 function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
-    matched_flat = find_matching_master(frame, master_flats, flats_keylist)
+    ind, matched_flat = find_matching_master(frame, master_flats, flats_keylist)
 
     if matched_flat !== nothing
         if (size(matched_flat) != size(frame))
@@ -90,10 +90,10 @@ function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
             end
         end
     else
-        #@warn "No matching flat found for $(frame["FILENAME"])"
+        @warn "No matching flat found for $(frame["FILENAME"])"
     end
 
-    return matched_flat
+    return ind, matched_flat
 
 end
 
@@ -108,13 +108,14 @@ Guarantees finding a dark frame that matches at least the ITIME. Frame should be
 function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1", "NAXIS2", "ITIME", "COADDS"], ["NAXIS1", "NAXIS2", "ITIME"], ["ITIME"]])
 
     matched_dark = nothing
+    ind = nothing
     for (i,keylist) in enumerate(ranked_darks_keylist)
-        matched_dark = find_matching_master(frame, master_darks, keylist)
+        ind, matched_dark = find_matching_master(frame, master_darks, keylist)
         if matched_dark !== nothing
 
             # for the 2nd and 3rd case, rescale by coadds
             if (i==2) || (i==3)
-                #@warn "Rescaling dark frame by COADDS $(matched_dark["COADDS"]) -> $(frame["COADDS"])"
+                @warn "Rescaling dark frame by COADDS $(matched_dark["COADDS"]) -> $(frame["COADDS"])"
                 matched_dark = matched_dark ./ matched_dark["COADDS"] .* frame["COADDS"]
             end
 
@@ -135,9 +136,49 @@ function find_closest_dark(frame, master_darks, ranked_darks_keylist = [["NAXIS1
     end
 
     if matched_dark === nothing
-        #@warn "No matching dark found"
+        @warn "No matching dark found"
     end
 
-    return matched_dark
+    return ind, matched_dark
+
+end
+
+function find_closest_sky(frame, master_skies, ranked_skies_keylist = [["FILTER", "ITIME", "COADDS"], ["FILTER", "ITIME"], ["FILTER"]])
+
+    matched_sky = nothing
+    ind = nothing
+    for (i,keylist) in enumerate(ranked_skies_keylist)
+        ind, matched_sky = find_matching_master(frame, master_skies, keylist)
+        if matched_sky !== nothing
+
+            # for the 2nd and 3rd case, rescale by coadds
+            if (i==2)
+                @warn "Rescaling sky frame by COADDS $(matched_sky["COADDS"]) -> $(frame["COADDS"])"
+                matched_sky = matched_sky ./ matched_sky["COADDS"] .* frame["COADDS"]
+
+            elseif (i==3)
+                @warn "Rescaling sky frame by ITIME $(matched_sky["ITIME"]) -> $(frame["ITIME"]) and COADDS $(matched_sky["COADDS"]) -> $(frame["COADDS"])"
+                matched_sky = matched_sky ./ (matched_sky["ITIME"] * matched_sky["COADDS"]) .* (frame["ITIME"] * frame["COADDS"])
+            end
+
+            if  (size(matched_sky) != size(frame))
+                if image_is_larger(matched_sky, frame)
+                    cropped_sky, _, _ = crop(matched_sky.data, size(frame))
+                    matched_sky = AstroImage(cropped_sky, matched_sky.header)
+                else
+                    @warn "Sky frame is smaller than the target frame, not cropping: $(frame["FILENAME"])"
+                    return nothing
+                end
+            end
+
+            break
+        end
+    end
+
+    if matched_sky === nothing
+        @warn "No matching sky found"
+    end
+
+    return ind, matched_sky
 
 end
