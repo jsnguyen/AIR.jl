@@ -66,13 +66,13 @@ for date in good_dates
     add_stage!(pipeline, stage_02)
 
 
-    injected_psf = nothing
+    injected_template_psf = nothing
     if date=="2002-08-02"
-        injected_psf = load("AS_209_data/2002-06-16/sequences/AS_209_1_template_psf_cored.fits")
+        injected_template_psf = load("AS_209_data/2002-06-16/sequences/AS_209_1_template_psf_cored.fits")
     end
 
     kwargs = (;sizes=datedict_sizes[date],
-            injected_psf=injected_psf)
+            injected_template_psf=injected_template_psf)
     stage_03 = Stage("03", register_sequences; kwargs=kwargs)
     add_input!(stage_03, datedict_template_psf_keys[date], datedict_target_keys[date])
     add_stage!(pipeline, stage_03)

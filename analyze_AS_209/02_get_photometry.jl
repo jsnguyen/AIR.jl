@@ -7,7 +7,7 @@ using Photometry
 using AIR
 import AIR.crop 
 
-function extract_psf(as209_northup_cropped_cube, template_psf)
+function extract_psf(northup_cropped_cube, template_psf)
 
     # template PSF should be normalized and have zero background
     template_psf /= maximum(template_psf)
@@ -18,10 +18,10 @@ function extract_psf(as209_northup_cropped_cube, template_psf)
     residuals = AstroImage[]
     extracted_psfs = AstroImage[]
     rescaled_template_psfs = AstroImage[]
-    for frame in as209_northup_cropped_cube
+    for frame in northup_cropped_cube
 
         derotated_template_psf = rotate_image_center(template_psf, -(frame["PARANG"]-frame["ROTPOSN"]))
-        derotated_template_psf, _, _ = crop(derotated_template_psf, size(as209_northup_cropped_cube[1]))
+        derotated_template_psf, _, _ = crop(derotated_template_psf, size(northup_cropped_cube[1]))
 
         residual, optimal_params = optimal_subtract_target(frame, derotated_template_psf, initial_guess, search_radius; scale_bounds=(1e-3, 1e3), offset_bounds=(-1000.0, 1000.0))
 
@@ -75,62 +75,51 @@ function get_fluxes(psfs)
 
 end
 
-@autolog begin
+@stage function get_photometry(date, northup_cropped_cube, template_psf; save_path=nothing)
+
+    if save_path === nothing
+        save_path = joinpath("analyze_AS_209/$(date)_photometry.toml")
+    end
+
+    paths = context["paths"]
 
     # because some of the epochs are in PA mode, the PSF of the target rotates throughout the frame
     # must do the photometry on each individual frame rather than the median frame as a result to fit the model better
 
-    epochs = ["2002-06-16", "2002-08-02", "2002-08-21", "2005-07-27"]
-
     photometry = OrderedDict{String, Any}()
-    for date in epochs
-        @info "Processing date: $date"
+    @info "Processing date: $date"
 
-        sequence_obslog = Obslog("pipeline/obslogs/$(date)_sequences.toml")
+    extracted_psfs, rescaled_template_psfs, residuals = extract_psf(northup_cropped_cube, template_psf)
+    fluxes = get_fluxes(rescaled_template_psfs) # use the rescaled full versions to get all the flux in the wings that are probably suppressed in the extracted PSFs
 
-        as209_northup_cropped_cube = load(joinpath(sequence_obslog.paths.sequences_folder, "as209_northup_cropped_cube.fits"), :)
+    mean_flux = mean(fluxes)
+    err_flux = std(fluxes)
 
-        # this date doesnt have a template psf, so we use the one from epoch 1
-        if date == "2002-08-02"
-            template_psf = load("data/2002-06-16/sequences/as209_template_psf.fits")
-        else
-            template_psf = load(joinpath(sequence_obslog.paths.sequences_folder, "as209_template_psf.fits"))
-        end
+    @info "Final Flux" flux=mean_flux err=err_flux
 
-        extracted_psfs, rescaled_template_psfs, residuals = extract_psf(as209_northup_cropped_cube, template_psf)
-        fluxes = get_fluxes(rescaled_template_psfs) # use the rescaled full versions to get all the flux in the wings that are probably suppressed in the extracted PSFs
+    save(joinpath(paths.sequences_folder, "$(date)_extracted_psfs.fits"), extracted_psfs...)
+    save(joinpath(paths.sequences_folder, "$(date)_rescaled_template_psfs.fits"), rescaled_template_psfs...)
+    save(joinpath(paths.sequences_folder, "$(date)_northup_residuals.fits"), residuals...)
 
-        mean_flux = mean(fluxes)
-        err_flux = std(fluxes)
-
-        @info "Final Flux" flux=mean_flux err=err_flux
-
-        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_extracted_psfs.fits"), extracted_psfs...)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_rescaled_template_psfs.fits"), rescaled_template_psfs...)
-        save(joinpath(sequence_obslog.paths.sequences_folder, "as209_northup_residuals.fits"), residuals...)
-
-
-        lambda = 0.0
-        bandpass = 0.0
-        if occursin("Kp", rescaled_template_psfs[1]["FILTER"])
-            lambda = 2.124e-6  # Kp filter central wavelength in meters
-            bandpass = 0.351e-6  # Kp filter bandwidth in meters
-        end
-
-        photometry["epoch_$(date)"] = OrderedDict(
-            "flux" => mean_flux,
-            "flux_units" => "W/m^2",
-            "err_flux" => err_flux,
-            "err_flux_units" => "W/m^2",
-            "avg_wl" => lambda,
-            "avg_wl_units" => "m",
-            "bandpass" => bandpass,
-            "bandpass_units" => "m",
-            "filter" => rescaled_template_psfs[1]["FILTER"]
-        )
-
+    lambda = 0.0
+    bandpass = 0.0
+    if occursin("Kp", rescaled_template_psfs[1]["FILTER"])
+        lambda = 2.124e-6  # Kp filter central wavelength in meters
+        bandpass = 0.351e-6  # Kp filter bandwidth in meters
     end
 
-    write_toml(joinpath("pipeline/as209_photometry.toml"), photometry)
+    photometry["epoch_$(date)"] = OrderedDict(
+        "flux" => mean_flux,
+        "flux_units" => "W/m^2",
+        "err_flux" => err_flux,
+        "err_flux_units" => "W/m^2",
+        "avg_wl" => lambda,
+        "avg_wl_units" => "m",
+        "bandpass" => bandpass,
+        "bandpass_units" => "m",
+        "filter" => rescaled_template_psfs[1]["FILTER"]
+    )
+
+    write_toml(save_path, photometry)
 
 end

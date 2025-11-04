@@ -59,7 +59,7 @@ function (s::Stage)()
     end
 
     if s.passthrough
-        s.output = s.input
+        s.output = Tuple(s.input)
     end
 
     return s.output

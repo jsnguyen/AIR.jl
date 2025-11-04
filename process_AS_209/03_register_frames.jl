@@ -77,13 +77,13 @@ function register_frames(template_psf, frames; sizes=(200, 190, 180))
 
 end
 
-@stage function register_sequences(template_psf_key, target_keys, sequences, template_psfs; injected_psf=nothing, kwargs...)
+@stage function register_sequences(template_psf_key, target_keys, sequences, template_psfs; injected_template_psf=nothing, kwargs...)
 
     paths = context["paths"]
 
-    if injected_psf !== nothing
+    if injected_template_psf !== nothing
         @info "Using injected PSF for registration"
-        template_psf = injected_psf
+        template_psf = injected_template_psf
     else
         @info "Using template PSF key: $template_psf_key"
         template_psf = template_psfs[template_psf_key]
