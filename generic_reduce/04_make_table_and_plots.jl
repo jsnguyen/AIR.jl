@@ -20,7 +20,7 @@ using AIR
     Threads.@threads for i in eachindex(reduced_sci)
         frame = reduced_sci[i]
         save_filename = joinpath(paths.plots_folder, "frames_$(lpad(string(frame["FRAMENO"]), 4, '0')).png")
-        @context_save save(save_filename, imview(frame, cmap=:matter))
+        save(save_filename, imview(frame, cmap=:matter))
 
         # no thread locking here for SPEED
         Threads.atomic_add!(counter, 1)

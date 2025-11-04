@@ -18,7 +18,8 @@ struct ObslogPaths
     skies_file::String
     masks_file::String
 
-    function ObslogPaths(date::String, data_folder::String)
+    function ObslogPaths(observations_folder::String, date::String)
+        data_folder = joinpath(observations_folder, date)
 
         raw_folder = joinpath(data_folder, "raw")
         reduced_folder = joinpath(data_folder, "reduced")

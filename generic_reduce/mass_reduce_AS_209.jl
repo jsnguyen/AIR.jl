@@ -8,9 +8,9 @@ include("04_make_table_and_plots.jl")
 good_dates = ["2002-06-16", "2002-08-02", "2002-08-21", "2005-07-27"]
 
 for date in good_dates
-    @info "Processing date: $date"
+    @info "Reducing date: $date"
 
-    paths = ObslogPaths(date, joinpath("/Users/jsn/landing/projects/AIR.jl/AS_209_data", date))
+    paths = ObslogPaths("/Users/jsn/landing/projects/AIR.jl/AS_209_data", date)
 
     # high level data that everything has access to
     context = Dict{String, Any}("paths" => paths,
@@ -25,7 +25,8 @@ for date in good_dates
     stage_02 = Stage("02", make_all_masters)
     add_stage!(pipeline, stage_02)
 
-    stage_03 = Stage("03", mass_reduce_frames)
+    kwargs = (;skip_sky_sub=true,)
+    stage_03 = Stage("03", mass_reduce_frames; kwargs=kwargs)
     add_stage!(pipeline, stage_03)
 
     stage_04 = Stage("04", make_table_and_plots)
@@ -33,7 +34,7 @@ for date in good_dates
 
     run(pipeline)
 
-    save_context(pipeline, "generic_reduce/reduce_$(date)_context.toml")
+    save_context(pipeline, "generic_reduce/context/reduce_$(date)_context.jls")
 end
 
 # need to add checkpointing

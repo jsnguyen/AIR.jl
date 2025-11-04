@@ -194,14 +194,13 @@ function make_master_masks(master_darks_masks, master_flats_masks)
     end
 
     # combine masks by size
-    master_masks = Dict{Any, Array{UInt8}}()
+    master_masks = Dict{Any, BitMatrix}()
     for key in keys(mask_stack)
         mm = reduce(.|, mask_stack[key])
-        mm = Array{UInt8}(mm) # convert BitMatrix to Array{UInt8} since FITS files don't support BitMatrix
         master_masks[key] = mm
     end
 
-    return collect(values(master_masks))
+    return master_masks
 end
 
 @stage function make_all_masters(sci_filepaths, flats_filepaths, flats_sky_filepaths, flats_lampon_filepaths, flats_lampoff_filepaths, darks_filepaths)
@@ -223,23 +222,27 @@ end
     @info "Making darks..."
     master_darks, master_darks_masks = make_master_darks(darks)
     @info "Writing master darks to" paths.darks_file
-    @context_save save(paths.darks_file, master_darks...)
+    save(paths.darks_file, master_darks...)
+    @context_store context paths.darks_file
 
     @info "Making flats..."
     master_flats, master_flats_masks = make_master_flats(flats, flats_sky, flats_lampon, flats_lampoff, master_darks)
     @info "Writing master flats to" paths.flats_file
-    @context_save save(paths.flats_file, master_flats...)
+    save(paths.flats_file, master_flats...)
+    @context_store context paths.flats_file
 
     @info "Making skies..."
     master_skies, master_skies_masks = make_master_skies(flats_sky, master_darks)
     @info typeof(master_skies)
     @info "Writing master skies to" paths.skies_file
-    @context_save save(paths.skies_file, master_skies...)
+    save(paths.skies_file, master_skies...)
+    @context_store context paths.skies_file
 
     @info "Making master masks..."
     master_masks = make_master_masks(master_darks_masks, master_flats_masks)
     @info "Writing masters masks to" paths.masks_file
-    @context_save save(paths.masks_file, master_masks...)
+    save(paths.masks_file, [Array{UInt8}(mm) for mm in collect(values(master_masks))]...)
+    @context_store context paths.masks_file
 
     return master_darks, master_flats, master_skies, master_masks
 

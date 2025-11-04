@@ -47,14 +47,26 @@ function add_to_sequence!(sequences, seq, name)
     end
 end
 
-@stage function generate_sequence_epoch(reduced_frames, indices_between)
+@stage function generate_sequence_epoch(reduced_frames, indices_between; rescale_frames=false)
 
     # got these from looking at the framelist and checking the frames
     obj_frames = get_between(reduced_frames, indices_between)
     @info "Found $(length(obj_frames)) object frames between $(indices_between)..."
-    keylist = ["ITIME", "FILTER"]
-    obj_seq = match_keys(obj_frames, keylist)
-    sequences = collect(values(obj_seq))
+
+    rescaled_frames = AstroImage[]
+    if rescale_frames
+        @info "Rescaling frames by exposure time..."
+        for frame in obj_frames
+            new_frame = copy(frame)
+            new_frame.data ./= frame["ITIME"]
+            push!(rescaled_frames, new_frame)
+        end
+        sequences = [rescaled_frames]
+    else
+        keylist = ["ITIME", "FILTER"]
+        obj_seq = match_keys(obj_frames, keylist)
+        sequences = collect(values(obj_seq))
+    end
 
     return sequences
 

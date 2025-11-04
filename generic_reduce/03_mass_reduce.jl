@@ -14,7 +14,7 @@ function local_median_replace_bad_pixels!(data, mask, median_size; fail_val=0.0)
     half_size = median_size ÷ 2
     height, width = size(data)
 
-    @inbounds for index in bad_indices
+    for index in bad_indices
         i, j = Tuple(index)
 
         i_start = max(1, i - half_size)
@@ -37,7 +37,7 @@ function local_median_replace_bad_pixels!(data, mask, median_size; fail_val=0.0)
 end
 
 # median_size is the median pixel replacement size, even numbers work best
-function reduce_frame(frame, master_flats, master_darks, master_skies, masks;median_size = 6, gain=1.0)
+function reduce_frame(frame, master_flats, master_darks, master_skies, masks;median_size = 6, gain=1.0, skip_sky_sub=false)
 
     reduced = copy(frame)
 
@@ -60,18 +60,15 @@ function reduce_frame(frame, master_flats, master_darks, master_skies, masks;med
         reduced["FLATDIV"] = true
     end
 
-    if length(master_skies) > 0
+    reduced["SKYSUB"] = false
+    if length(master_skies) > 0 && !skip_sky_sub
         ind, matched_sky = find_closest_sky(frame, master_skies)
         if matched_sky !== nothing
             @info "Finding sky frame for $(reduced["FILENAME"])"
             @info "Subtracting sky frame from $(reduced["FILENAME"])"
             reduced .-= matched_sky
             reduced["SKYSUB"] = true
-        else
-            reduced["SKYSUB"] = false
         end
-    else
-        reduced["SKYSUB"] = false
     end
 
     reduced = (reduced .- matched_dark) ./ matched_flat
@@ -102,7 +99,7 @@ function reduce_frame(frame, master_flats, master_darks, master_skies, masks;med
 
 end
 
-@stage function mass_reduce_frames(master_darks, master_flats, master_skies, master_masks; guest_obslog=nothing, use_guest_flats=false, use_guest_darks=false, use_guest_skies=false, use_guest_masks=false)
+@stage function mass_reduce_frames(master_darks, master_flats, master_skies, master_masks; guest_master_flats=nothing, guest_master_darks=nothing, guest_master_skies=nothing, kwargs...)
 
     date = context["paths"].date
     paths = context["paths"]
@@ -122,18 +119,17 @@ end
 
     # no LACosmic, probably more trouble than it's worth
 
+    # "guest" master frames will supersede the main obslog's master frames if specified
+    master_flats = guest_master_flats !== nothing ? vcat(guest_master_flats, master_flats) : master_flats
+    master_darks = guest_master_darks !== nothing ? vcat(guest_master_darks, master_darks) : master_darks
+    master_skies = guest_master_skies !== nothing ? vcat(guest_master_skies, master_skies) : master_skies
+
     reduced_frames = Vector{AstroImage}(undef, length(sci))
     Threads.@threads for i in eachindex(sci)
 
         frame = sci[i]
 
-        # "guest" master frames will supersede the main obslog's master frames if specified
-        master_flats = use_guest_flats ? vcat(guest_obslog.master_flats, master_flats) : master_flats
-        master_darks = use_guest_darks ? vcat(guest_obslog.master_darks, master_darks) : master_darks
-        master_skies = use_guest_skies ? vcat(guest_obslog.master_skies, master_skies) : master_skies
-        master_masks = use_guest_masks ? vcat(guest_obslog.master_masks, master_masks) : master_masks
-
-        reduced = reduce_frame(frame, master_flats, master_darks, master_skies, master_masks; gain=gain)
+        reduced = reduce_frame(frame, master_flats, master_darks, master_skies, master_masks; gain=gain, kwargs...)
 
         readnoise = get_NIRC2_readnoise(reduced["SAMPMODE"])
         reduced["RDNOISE"] = readnoise
@@ -147,9 +143,13 @@ end
     make_and_clear(paths.reduced_folder, "reduced_*.fits")
     
     @info "Saving reduced frames..."
-    for rf in reduced_frames
-        reduced_filepath = joinpath(paths.reduced_folder, rf["RED-FN"])
-        @context_save key="reduced_frames" save(reduced_filepath, rf)
+
+    reduced_filepaths = [joinpath(paths.reduced_folder, rf["RED-FN"]) for rf in reduced_frames]
+    @context_store context reduced_filepaths
+    Threads.@threads for i in eachindex(reduced_frames)
+        fp = reduced_filepaths[i]
+        rf = reduced_frames[i]
+        save(fp, rf)
     end
 
     return reduced_frames

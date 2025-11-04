@@ -83,7 +83,7 @@ function center_frames(frames, coarse_size, fine_size, rotator_mode; fixed_sigma
 
 end
 
-@stage function make_template_psf(sequences, sequence_index; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999)
+@stage function make_template_psf(sequence_index, sequences; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999, background_mask_radius=100)
 
     paths = context["paths"]
     
@@ -92,8 +92,8 @@ end
     max_idx = argquantile(template_psf, quantile_threshold)
     max_value = template_psf[max_idx...]
     initial_cy, initial_cx = Float64.(max_idx)
-    
-    inv_circle_mask = .! make_circle_mask(size(template_psf), 200; center=max_idx)
+
+    inv_circle_mask = .! make_circle_mask(size(template_psf), background_mask_radius; center=max_idx)
     background_level = median(template_psf[inv_circle_mask])
     
     initial_guess = [max_value, initial_cx, initial_cy, fixed_sigma, fixed_sigma, background_level]

@@ -83,39 +83,52 @@ function center_frames(frames, coarse_size, fine_size, rotator_mode; fixed_sigma
 
 end
 
-@stage function make_template_psf(sequences, sequence_index; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999)
+@stage function make_template_psf(unsaturated_keys, sequences; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999, use_cored=false)
 
     paths = context["paths"]
+
+    template_psfs = Dict{String, AstroImage}()
     
-    cropped_frames, centered_frames, template_psf, template_psf_cored = make_template_psf_and_center_frames(sequences[sequence_index], paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, fixed_sigma=fixed_sigma, quantile_threshold=quantile_threshold)
+    for key in unsaturated_keys
+        @info "Making template PSF for sequence: $(length(sequences[key]))"
+        cropped_frames, centered_frames, template_psf, template_psf_cored = make_template_psf_and_center_frames(sequences[key], paths.sequences_folder; coarse_size=coarse_size, fine_size=fine_size, fixed_sigma=fixed_sigma, quantile_threshold=quantile_threshold)
 
-    max_idx = argquantile(template_psf, quantile_threshold)
-    max_value = template_psf[max_idx...]
-    initial_cy, initial_cx = Float64.(max_idx)
-    
-    inv_circle_mask = .! make_circle_mask(size(template_psf), 200; center=max_idx)
-    background_level = median(template_psf[inv_circle_mask])
-    
-    initial_guess = [max_value, initial_cx, initial_cy, fixed_sigma, fixed_sigma, background_level]
+        remove_nan!(template_psf)
+        max_idx = argquantile(template_psf, quantile_threshold)
+        max_value = template_psf[max_idx...]
+        initial_cy, initial_cx = Float64.(max_idx)
 
-    res = fit_2d_gaussian(template_psf, initial_guess)
-    amp, cx, cy, σx, σy, offset = res
-    @info "Fitted template PSF parameters:" AMP=amp CX=cx CY=cy SIGMA_X=σx SIGMA_Y=σy OFFSET=offset
+        inv_circle_mask = .! make_circle_mask(size(template_psf), Int(0.5*fine_size); center=max_idx)
+        background_level = median(template_psf[inv_circle_mask])
+        
+        initial_guess = [max_value, initial_cx, initial_cy, fixed_sigma, fixed_sigma, background_level]
 
-    template_psf = AstroImage(template_psf)
+        res = fit_2d_gaussian(template_psf, initial_guess)
+        amp, cx, cy, σx, σy, offset = res
+        @info "Fitted template PSF parameters:" AMP=amp CX=cx CY=cy SIGMA_X=σx SIGMA_Y=σy OFFSET=offset
 
-    template_psf["AMP"] = res[1]
-    template_psf["CX"] = res[2]
-    template_psf["CY"] = res[3]
-    template_psf["SIGMA_X"] = res[4]
-    template_psf["SIGMA_Y"] = res[5]
-    template_psf["OFFSET"] = res[6]
+        template_psf = AstroImage(template_psf)
 
-    save(joinpath(paths.sequences_folder, "$(context["target"])_cropped_sequence.fits"), cropped_frames...)
-    save(joinpath(paths.sequences_folder, "$(context["target"])_centered_sequence.fits"), centered_frames...)
-    save(joinpath(paths.sequences_folder, "$(context["target"])_template_psf.fits"), template_psf)
-    save(joinpath(paths.sequences_folder, "$(context["target"])_template_psf_cored.fits"), template_psf_cored)
+        template_psf["AMP"] = res[1]
+        template_psf["CX"] = res[2]
+        template_psf["CY"] = res[3]
+        template_psf["SIGMA_X"] = res[4]
+        template_psf["SIGMA_Y"] = res[5]
+        template_psf["OFFSET"] = res[6]
 
-    return centered_frames, template_psf
+        save(joinpath(paths.sequences_folder, "$(key)_cropped_sequence.fits"), cropped_frames...)
+        save(joinpath(paths.sequences_folder, "$(key)_centered_sequence.fits"), centered_frames...)
+        save(joinpath(paths.sequences_folder, "$(key)_template_psf.fits"), template_psf)
+        save(joinpath(paths.sequences_folder, "$(key)_template_psf_cored.fits"), template_psf_cored)
+
+        if use_cored
+            template_psfs[key] = template_psf_cored
+        else
+            template_psfs[key] = template_psf
+        end
+
+    end
+
+    return template_psfs
 
 end

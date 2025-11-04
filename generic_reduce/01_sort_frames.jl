@@ -19,7 +19,7 @@ function is_lampoff_frame(frame, arcsec_threshold, lampoff_threshold)
                                             "shutter open"   => lowercase(frame["SHRNAME"]) == "open")
 
     if all(values(lamp_flat_conditions)) && median(frame) <= lampoff_threshold
-        @info frame["FILENAME"] "is lamp off flat"
+        @info "$(frame["FILENAME"]) is lamp off flat"
         return true
     end
 
@@ -37,7 +37,7 @@ function is_lampon_frame(frame, arcsec_threshold, lampoff_threshold)
 
 
     if all(values(lamp_flat_conditions)) && median(frame) > lampoff_threshold
-        @info frame["FILENAME"] "is lamp on flat"
+        @info "$(frame["FILENAME"]) is lamp on flat"
         return true
     end
 
@@ -48,7 +48,7 @@ function is_sky_twilight_frame(frame)
     sky_twilight_flat_conditions = Dict{String,Any}("sky/twilight" => (occursin("sky", lowercase(frame["OBJECT"])) || occursin("twi", lowercase(frame["OBJECT"]))))
 
     if all(values(sky_twilight_flat_conditions))
-        @info frame["FILENAME"] "is sky or twilight flat"
+        @info "$(frame["FILENAME"]) is sky or twilight flat"
         return true
     end
 
@@ -59,7 +59,7 @@ function is_dark_frame(frame)
     dark_conditions = Dict{String,Any}("shutter closed" => lowercase(frame["SHRNAME"]) == "closed")
 
     if all(values(dark_conditions))
-        @info frame["FILENAME"] "is dark frame"
+        @info "$(frame["FILENAME"]) is dark frame"
         return true
     end
 

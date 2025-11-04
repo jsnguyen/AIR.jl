@@ -3,6 +3,7 @@ using AstroImages
 using ImageTransformations
 using Statistics
 using CoordinateTransformations
+using ImageFiltering
 
 using AIR
 
@@ -71,7 +72,7 @@ function make_template_psf(frames, coarse_size, fine_size, rotator_mode; fixed_s
             remove_nan!(frame)
         end
 
-        max_idx = argquantile(frame.data, quantile_threshold)
+        max_idx = argquantile(imfilter(frame.data, Kernel.gaussian(10), quantile_threshold))
         initial_cy, initial_cx = Float64.(Tuple(max_idx))
         initial_guess = [5000.0, initial_cx, initial_cy, 10.0]
 
