@@ -83,7 +83,7 @@ function center_frames(frames, coarse_size, fine_size, rotator_mode; fixed_sigma
 
 end
 
-@stage function make_template_psf(unsaturated_keys, sequences; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999, use_cored=false)
+@stage function make_template_psf(unsaturated_keys, sequences; coarse_size=400, fine_size=370, fixed_sigma=4.0, quantile_threshold=0.9999, use_cored=false, save_suffix=nothing)
 
     paths = context["paths"]
 
@@ -107,7 +107,9 @@ end
         amp, cx, cy, σx, σy, offset = res
         @info "Fitted template PSF parameters:" AMP=amp CX=cx CY=cy SIGMA_X=σx SIGMA_Y=σy OFFSET=offset
 
-        template_psf = AstroImage(template_psf)
+        # grab header from first frame in sequence
+        header = first(sequences[key]).header
+        template_psf = AstroImage(template_psf, header)
 
         template_psf["AMP"] = res[1]
         template_psf["CX"] = res[2]
@@ -116,10 +118,17 @@ end
         template_psf["SIGMA_Y"] = res[5]
         template_psf["OFFSET"] = res[6]
 
-        save(joinpath(paths.sequences_folder, "$(key)_cropped_sequence.fits"), cropped_frames...)
-        save(joinpath(paths.sequences_folder, "$(key)_centered_sequence.fits"), centered_frames...)
-        save(joinpath(paths.sequences_folder, "$(key)_template_psf.fits"), template_psf)
-        save(joinpath(paths.sequences_folder, "$(key)_template_psf_cored.fits"), template_psf_cored)
+        if save_suffix !== nothing
+            save(joinpath(paths.sequences_folder, "$(key)_cropped_sequence_$(save_suffix).fits"), cropped_frames...)
+            save(joinpath(paths.sequences_folder, "$(key)_centered_sequence_$(save_suffix).fits"), centered_frames...)
+            save(joinpath(paths.sequences_folder, "$(key)_template_psf_$(save_suffix).fits"), template_psf)
+            save(joinpath(paths.sequences_folder, "$(key)_template_psf_cored_$(save_suffix).fits"), template_psf_cored)
+        else
+            save(joinpath(paths.sequences_folder, "$(key)_cropped_sequence.fits"), cropped_frames...)
+            save(joinpath(paths.sequences_folder, "$(key)_centered_sequence.fits"), centered_frames...)
+            save(joinpath(paths.sequences_folder, "$(key)_template_psf.fits"), template_psf)
+            save(joinpath(paths.sequences_folder, "$(key)_template_psf_cored.fits"), template_psf_cored)
+        end
 
         if use_cored
             template_psfs[key] = template_psf_cored

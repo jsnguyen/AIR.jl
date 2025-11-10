@@ -25,7 +25,8 @@ for date in good_dates
     stage_02 = Stage("02", make_all_masters)
     add_stage!(pipeline, stage_02)
 
-    kwargs = (;skip_sky_sub=true,)
+    kwargs = (;skip_sky_sub=true,
+               div_itime=true)
     stage_03 = Stage("03", mass_reduce_frames; kwargs=kwargs)
     add_stage!(pipeline, stage_03)
 

@@ -1,7 +1,7 @@
 name = "AIR"
 uuid = "a6f1b68a-691f-4512-b9ed-8e7b6cf767b3"
-authors = ["Jayke Nguyen <jsn.phpro1701@gmail.com>"]
 version = "0.0.1"
+authors = ["Jayke Nguyen <jsn.phpro1701@gmail.com>"]
 
 [deps]
 ADI = "904a6c7d-4c1b-562f-9573-ab2e7e1c7946"
@@ -17,6 +17,7 @@ Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
 HCIToolbox = "b6cd55e5-4d02-4e12-b82c-005f67e784bf"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
 ImageTransformations = "02fcd773-0e25-5acc-982a-7f6622650795"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 LACosmic = "a188e134-b1c0-4a25-bc7e-93a99f0f0e06"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"
@@ -31,3 +32,8 @@ Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"
 SkyCoords = "fc659fc5-75a3-5475-a2ea-3da92c065361"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
+
+[compat]
+Interpolations = "0.16.2"
+Trapz = "2.0.3"

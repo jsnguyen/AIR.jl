@@ -94,6 +94,9 @@ end
         frames = sequences[key]
         rf = register_frames(template_psf, frames; kwargs...)
         save(joinpath(paths.sequences_folder, "$(key)_aligned_frames.fits"), rf...)
+        rf_cube = framelist_to_cube(rf)
+        rf_median = median(rf_cube, dims=3) |> x -> dropdims(x, dims=3)
+        save(joinpath(paths.sequences_folder, "$(key)_aligned_frames_median.fits"), rf_median)
         registered_frames[key] = rf
     end
     

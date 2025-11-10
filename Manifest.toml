@@ -2,7 +2,7 @@
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "17f76779e7633a1ab011683acf759a9d6e53d0b2"
+project_hash = "4a66e680c4e3a616c4d20888ffa0d51dd6c7f32b"
 
 [[deps.ADI]]
 deps = ["BiweightStats", "ConcreteStructs", "CoordinateTransformations", "Dierckx", "Distances", "Distributions", "FillArrays", "HCIToolbox", "ImageTransformations", "LinearAlgebra", "Logging", "NMF", "OrderedCollections", "Photometry", "ProgressLogging", "Reexport", "Rotations", "Setfield", "StaticArrays", "StaticKernels", "Statistics", "StatsBase", "StructArrays"]
@@ -26,7 +26,7 @@ version = "1.18.0"
     EnzymeCore = "f151be2c-9106-41f4-ab19-57ee4f262869"
 
 [[deps.AIR]]
-deps = ["ADI", "AstroAngles", "AstroImages", "AstroLib", "CFITSIO", "CoordinateTransformations", "Dates", "FITSIO", "ForwardDiff", "Glob", "HCIToolbox", "ImageFiltering", "ImageTransformations", "LACosmic", "Logging", "LoggingExtras", "LsqFit", "Optim", "OrderedCollections", "Photometry", "Plots", "Printf", "ProgressMeter", "Rotations", "SkyCoords", "Statistics", "TOML"]
+deps = ["ADI", "AstroAngles", "AstroImages", "AstroLib", "CFITSIO", "CoordinateTransformations", "Dates", "FITSIO", "ForwardDiff", "Glob", "HCIToolbox", "ImageFiltering", "ImageTransformations", "LACosmic", "Logging", "LoggingExtras", "LsqFit", "Optim", "OrderedCollections", "Photometry", "Plots", "Printf", "ProgressMeter", "Rotations", "SkyCoords", "Statistics", "TOML", "Trapz"]
 path = "."
 uuid = "a6f1b68a-691f-4512-b9ed-8e7b6cf767b3"
 version = "0.0.1"
@@ -2065,6 +2065,11 @@ version = "0.4.85"
     LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
     OnlineStatsBase = "925886fa-5bf2-5e8e-b522-a9147a512338"
     Referenceables = "42d2dcc6-99eb-4e98-b66c-637b7d73030e"
+
+[[deps.Trapz]]
+git-tree-sha1 = "79eb0ed763084a3e7de81fe1838379ac6a23b6a0"
+uuid = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
+version = "2.0.3"
 
 [[deps.TypedTables]]
 deps = ["Adapt", "Dictionaries", "Indexing", "SplitApplyCombine", "Tables", "Unicode"]

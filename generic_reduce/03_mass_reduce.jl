@@ -37,7 +37,10 @@ function local_median_replace_bad_pixels!(data, mask, median_size; fail_val=0.0)
 end
 
 # median_size is the median pixel replacement size, even numbers work best
-function reduce_frame(frame, master_flats, master_darks, master_skies, masks;median_size = 6, gain=1.0, skip_sky_sub=false)
+# divide by coadds so that the final units is just in photoelectrons
+# by default DONT divide by itime
+# divide by itime to get photoelectrons per second
+function reduce_frame(frame, master_flats, master_darks, master_skies, masks;median_size = 6, gain=1.0, skip_sky_sub=false, div_coadds=true, div_itime=false)
 
     reduced = copy(frame)
 
@@ -73,8 +76,21 @@ function reduce_frame(frame, master_flats, master_darks, master_skies, masks;med
 
     reduced = (reduced .- matched_dark) ./ matched_flat
 
-    reduced ./= reduced["COADDS"] # divide by coadds
+    reduced["DIVCOADDS"] = false
+    if div_coadds
+        reduced ./= reduced["COADDS"]
+        reduced["DIVCOADDS"] = true
+    end
+
+    reduced["DIVITIME"] = false
+    if div_itime
+        reduced ./= reduced["ITIME"]
+        reduced["DIVITIME"] = true
+    end
+
     reduced .*= gain
+
+    reduced["GAIN"] = gain
 
     # start with the bad pixel mask as our mask
     mask = copy(NIRC2_bad_pixel_mask)

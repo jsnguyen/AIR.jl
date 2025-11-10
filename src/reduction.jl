@@ -77,7 +77,29 @@ end
 Guarantees finding a flat frame that matches at least the FILTER. Frame should be cropped as well.
 """
 function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
-    ind, matched_flat = find_matching_master(frame, master_flats, flats_keylist)
+
+    exceptions = Dict("NB2.108" => ("K + clear", "Ks + clear", "Kp + clear"))
+
+    ind = nothing
+    matched_flat = nothing
+    for key in keys(exceptions)
+        if occursin(key, frame["FILTER"])
+            alternate_flats = exceptions[key]
+            for alt in alternate_flats
+                matches = [occursin(alt, m["FILTER"]) for m in master_flats]
+
+                if any(matches)
+                    ind = findfirst(matches)
+                    matched_flat = master_flats[ind]
+                    @warn "Using $(matched_flat["FILTER"]) flat for $(key) frames!"
+                end
+            end
+        end
+    end
+
+    if matched_flat === nothing
+        ind, matched_flat = find_matching_master(frame, master_flats, flats_keylist)
+    end
 
     if matched_flat !== nothing
         if (size(matched_flat) != size(frame))
@@ -86,7 +108,7 @@ function find_closest_flat(frame, master_flats, flats_keylist=["FILTER"])
                 matched_flat = AstroImage(cropped_flat, matched_flat.header)
             else
                 @warn "Flat frame is smaller than the target frame, not cropping: $(frame["FILENAME"])"
-                return nothing
+                return nothing, nothing
             end
         end
     else

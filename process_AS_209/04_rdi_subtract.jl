@@ -19,15 +19,19 @@ import AIR.crop
     target_frames = registered_frames[target_keys[1]]
     reference_frames = registered_frames[target_keys[2]]
 
+    if target_keys[1] == target_keys[2]
+        reference_frames = deepcopy(registered_frames[target_keys[2]])
+    end
+
     final_size = (2*outer_mask_radius, 2*outer_mask_radius)
 
     rotator_mode = first(reference_frames)["ROTMODE"]
+    @info "Using rotator mode: $rotator_mode"
 
     # derotate reference to PSF-aligned frame
     reference_psfup_cube = AstroImage[]
     for frame in reference_frames
         frame,_,_ = crop(frame, final_size)
-        frame ./= frame["ITIME"]  # Normalize by integration time
         if rotator_mode == "position angle"
             # rotate the reference to be in the pupil-up orientation
             # should have a diffraction spike aligned with the vertical
@@ -49,8 +53,6 @@ import AIR.crop
     Threads.@threads for i in eachindex(target_frames)
         frame = target_frames[i]
         frame,_,_ = crop(frame, final_size)
-
-        frame ./= frame["ITIME"]
 
         # rotate the reference to be in the target frame orientation
         # should be aligned with the target frame

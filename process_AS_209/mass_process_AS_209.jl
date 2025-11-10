@@ -65,7 +65,6 @@ for date in good_dates
     add_input!(stage_02, datedict_unsaturated_sequences[date])
     add_stage!(pipeline, stage_02)
 
-
     injected_template_psf = nothing
     if date=="2002-08-02"
         injected_template_psf = load("AS_209_data/2002-06-16/sequences/AS_209_1_template_psf_cored.fits")

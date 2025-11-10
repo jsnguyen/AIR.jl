@@ -50,7 +50,8 @@ function get_astrometry(northup_median, northup_cube, template_psf, median_coars
         object_y = fit_params[3] + cr_y 
         object_x = fit_params[2] + cr_x
 
-        cropped_frame, oy, ox = subpixel_crop(frame, (boxsize, boxsize), (object_y, object_x))
+        cf, oy, ox = subpixel_crop(frame, (boxsize, boxsize), (object_y, object_x))
+        cropped_frame = AstroImage(cf, frame.header)
         push!(northup_cropped_cube, cropped_frame)
 
         push!(jitter_xs, object_x)
